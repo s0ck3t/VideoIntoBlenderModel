@@ -1,0 +1,41 @@
+# ── Secrets & Credentials (Strict No-Commit Policy) ──────────
+.env
+*.env
+.env.*
+secrets.yaml
+*.pem
+*.key
+*credentials*.json
+
+# ── Scratch / intermediate rig files ─────────────────────────
+assets/rigs/*.log
+assets/rigs/*.blend
+
+# ── Auto-downloaded inference weights ────────────────────────
+weights/**
+!weights/.gitkeep
+
+# ── Run outputs ──────────────────────────────────────────────
+outputs/**
+!outputs/.gitkeep
+
+# ── Python & caches ──────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# ── OS / editor / local workspace configs ────────────────────
+:memory:.ses
+.DS_Store
+Thumbs.db
+.agent/
+.agents/
+scratch/
+GEMINI.md
+PROJECT.md

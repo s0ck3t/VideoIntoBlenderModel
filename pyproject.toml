@@ -1,0 +1,26 @@
+[project]
+name = "v2bm"
+version = "0.1.0"
+description = "Commercial-free human motion retargeting from monocular video or still photos to Humanoid-rigged 3D characters."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26.0",
+    "opencv-python>=4.8.0",
+    "mediapipe>=1.1.0",
+    "scipy>=1.11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+v2bm = "v2bm.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["v2bm*"]

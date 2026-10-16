@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "project": "VideoIntoBlenderModel",
+  "last_updated_utc": "2026-10-15T16:00:00Z",
+  "provenance_statement": "All runtime assets in VideoIntoBlenderModel are strictly commercial-permissive, non-copyleft, and free of non-commercial research licensing restrictions.",
+  "assets": {
+    "videos": [
+      {
+        "id": "video_breakdancer_kickup",
+        "title": "Breakdance Kick-up Demonstration",
+        "creator": "VincaniTV",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Kick-up.webm",
+        "direct_download_url": "https://upload.wikimedia.org/wikipedia/commons/4/48/Kick-up.webm",
+        "local_path": "assets/video/breakdancer_kickup.mp4",
+        "licence_name": "Creative Commons Attribution 3.0 Unported",
+        "licence_spdx": "CC-BY-3.0",
+        "commercial_use_allowed": true,
+        "attribution_required": true,
+        "attribution_text": "Video: 'Kick-up.webm' by VincaniTV, licensed under CC BY 3.0 Unported.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1920x1080",
+          "fps": 24.0,
+          "frame_count": 67,
+          "duration_seconds": 2.79,
+          "person_count": 1,
+          "motion_type": "breakdance kick-up freeze transition"
+        },
+        "verification_statement": "Verified compliant: depicting a single clearly visible human breakdancer performing an athletic kick-up freeze transition, unobstructed head-to-toe framing, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_breakdancer_6step",
+        "title": "Six-Step Breakdance Demonstration",
+        "creator": "Neil Sweeney",
+        "source_url": "https://commons.wikimedia.org/wiki/File:6-step_example.webm",
+        "direct_download_url": "https://upload.wikimedia.org/wikipedia/commons/e/e4/6-step_example.webm",
+        "local_path": "assets/video/breakdancer_6step.mp4",
+        "licence_name": "Creative Commons Attribution 3.0 Unported",
+        "licence_spdx": "CC-BY-3.0",
+        "commercial_use_allowed": true,
+        "attribution_required": true,
+        "attribution_text": "Video: '6-step example.webm' by Neil Sweeney, licensed under CC BY 3.0 Unported.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "640x360",
+          "fps": 30.0,
+          "frame_count": 120,
+          "duration_seconds": 4.0,
+          "person_count": 1,
+          "motion_type": "breakdance six-step floor sequence"
+        },
+        "verification_statement": "Verified compliant: depicting a single breakdancer demonstrating a six-step rotational footwork sequence with complete limb articulation, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_kung_fu_haikou",
+        "title": "Kung Fu Form at Haikou People's Park",
+        "creator": "Anna Frodesiak",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Kung_fu_at_Haikou_People%27s_Park.ogv",
+        "direct_download_url": "https://upload.wikimedia.org/wikipedia/commons/b/be/Kung_fu_at_Haikou_People%27s_Park.ogv",
+        "local_path": "assets/video/kung_fu_haikou.mp4",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'Kung fu at Haikou People's Park' by Anna Frodesiak, dedicated to the public domain under CC0 1.0 Universal.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "720x480",
+          "fps": 29.97,
+          "frame_count": 149,
+          "duration_seconds": 4.97,
+          "person_count": 1,
+          "motion_type": "martial arts kung fu forms and strikes"
+        },
+        "verification_statement": "Verified compliant: depicting a martial artist executing dynamic kung fu forms and strikes with full-body articulation, passing v2bm.checks.check_video validation with zero errors."
+      }
+    ],
+    "character_rigs": [
+      {
+        "id": "rig_kenney_skater",
+        "title": "Animated Characters Protagonists — Skater Male",
+        "creator": "Kenney (Kenney Vleugels)",
+        "source_url": "https://kenney.nl/assets/animated-characters-protagonists",
+        "local_path": "assets/rigs/kenney_skater.fbx",
+        "companion_texture_path": "assets/rigs/kenney_skater.png",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Character model: 'Animated Characters Protagonists - skaterMaleA' by Kenney (www.kenney.nl), dedicated to the public domain under CC0 1.0 Universal.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": true,
+          "texture_resolution": "512x512",
+          "texture_mime": "image/png",
+          "bone_count": 25,
+          "vertex_count": 804,
+          "polygon_count": 1604,
+          "rest_fk_error": 1.4147e-12,
+          "rest_skin_error_cm": 2.6958e-07
+        },
+        "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion diffuse PNG texture, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-4 and rest skin error < 1e-2 cm, and passing headless Blender GLB validation."
+      },
+      {
+        "id": "rig_kenney_female",
+        "title": "Animated Characters Retro — Human Female",
+        "creator": "Kenney (Kenney Vleugels)",
+        "source_url": "https://kenney.nl/assets/animated-characters-retro",
+        "local_path": "assets/rigs/kenney_female.fbx",
+        "companion_texture_path": "assets/rigs/kenney_female.png",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Character model: 'Animated Characters Retro - humanFemaleA' by Kenney (www.kenney.nl), dedicated to the public domain under CC0 1.0 Universal.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": true,
+          "texture_resolution": "512x512",
+          "texture_mime": "image/png",
+          "bone_count": 25,
+          "vertex_count": 804,
+          "polygon_count": 1604,
+          "rest_fk_error": 1.4147e-12,
+          "rest_skin_error_cm": 2.6958e-07
+        },
+        "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion diffuse PNG texture, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-4 and rest skin error < 1e-2 cm, and passing headless Blender GLB validation."
+      },
+      {
+        "id": "rig_erika_archer",
+        "title": "Erika Archer — High-Quality Female Elf Character",
+        "creator": "Adobe Mixamo",
+        "source_url": "https://huggingface.co/datasets/GbotHQ/mixamo-characters",
+        "direct_download_url": "https://huggingface.co/datasets/GbotHQ/mixamo-characters/resolve/main/Erika%20Archer.fbx",
+        "local_path": "assets/rigs/erika_archer.fbx",
+        "licence_name": "Mixamo Royalty-Free License (Commercial Use Permitted)",
+        "licence_spdx": "Mixamo-Royalty-Free",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Character model: 'Erika Archer' (female elf archer) by Adobe Mixamo.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": false,
+          "texture_resolution": "High-Resolution PBR Diffuse / Normal PNG",
+          "texture_mime": "image/png",
+          "bone_count": 67,
+          "controlled_bones": 22,
+          "mesh_count": 4,
+          "rest_fk_error": 7.608e-11,
+          "rest_skin_error_cm": 0.8288
+        },
+        "verification_statement": "Verified compliant: high-fidelity female elf character rig with pointed elven ears, full costume, eyes, lashes, and hair meshes with embedded PNG textures, passing v2bm.checks.check_rig with rest FK error < 1e-4, retargeting cleanly to character_animation.glb and rendering in headless Blender studio."
+      }
+    ],
+    "supplemental_assets": [
+      {
+        "id": "demo_video",
+        "title": "CLI Test Demonstration Video",
+        "creator": "VincaniTV / VideoIntoBlenderModel Maintainers",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Kick-up.webm",
+        "local_path": "docs/assets/demo.mp4",
+        "licence_name": "Creative Commons Attribution 3.0 Unported",
+        "licence_spdx": "CC-BY-3.0",
+        "commercial_use_allowed": true,
+        "attribution_required": true,
+        "attribution_text": "Derived from 'Kick-up.webm' by VincaniTV, licensed under CC BY 3.0 Unported."
+      },
+      {
+        "id": "procedural_humanoid_rig",
+        "title": "Procedural CC0 Humanoid Rig Asset",
+        "creator": "VideoIntoBlenderModel Maintainers",
+        "source_url": "scripts/generate_humanoid_rig.py",
+        "local_path": "assets/rigs/humanoid_rig.fbx",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Procedural character rig generated via scripts/generate_humanoid_rig.py under CC0 1.0 Universal."
+      }
+    ]
+  }
+}

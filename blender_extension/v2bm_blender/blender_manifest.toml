@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+
+id = "v2bm"
+version = "0.1.0"
+name = "VideoIntoBlenderModel"
+tagline = "Transfer human motion from video to Humanoid characters"
+maintainer = "VideoIntoBlenderModel Contributors"
+type = "add-on"
+
+website = "https://localhost/VideoIntoBlenderModel"
+tags = ["Animation", "Import-Export"]
+blender_version_min = "4.2.0"
+
+license = ["SPDX:Apache-2.0"]
+copyright = ["2026 VideoIntoBlenderModel Contributors"]
+
+[permissions]
+files = "Read inputs and write job logs and generated GLB files"
