@@ -15,7 +15,6 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 | `video_kung_fu_haikou` | Video | Kung Fu Form Demonstration | Anna Frodesiak | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Kung_fu_at_Haikou_People%27s_Park.ogv) | `assets/video/kung_fu_haikou.mp4` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `rig_kenney_skater` | Rig | Animated Characters Protagonists — Skater Male | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-protagonists) | `assets/rigs/kenney_skater.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
 | `rig_kenney_female` | Rig | Animated Characters Retro — Human Female | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-retro) | `assets/rigs/kenney_female.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
-| `rig_erika_archer` | Rig | Erika Archer — High-Quality Female Elf Character | Adobe Mixamo | [HuggingFace](https://huggingface.co/datasets/GbotHQ/mixamo-characters) | `assets/rigs/erika_archer.fbx` | [Royalty-Free](https://www.adobe.com/legal/terms.html) | Permitted | Optional |
 | `demo_video` | Video | CLI Test Demonstration Video | VincaniTV / Maintainers | Derived from Wikimedia Commons | `docs/assets/demo.mp4` | [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/) | Permitted | Yes |
 | `procedural_humanoid_rig` | Rig | Procedural CC0 Humanoid Rig Asset | Project Maintainers | Procedural Blender script | `assets/rigs/humanoid_rig.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 
@@ -137,30 +136,6 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
     - Rest Forward Kinematics (FK) Error: $1.4147 \times 10^{-12}$ (well within the $< 10^{-4}$ tolerance threshold)
     - Rest Linear Blend Skinning Error: $2.6958 \times 10^{-7}\text{ cm}$ (well within the $< 10^{-2}\text{ cm}$ tolerance threshold)
   - Quality Assurance: Passes `v2bm.checks.check_rig()`, exports valid textured glTF 2.0 (`.glb`), and passes headless Blender 5.2.2 LTS automated verification (`scripts/verify_blender_glb.py`).
-
----
-
-### 3.3. Erika Archer — High-Quality Female Elf Character (`assets/rigs/erika_archer.fbx`)
-
-- **Asset Title**: Erika Archer (Female Elf Archer Character)
-- **Creator / Author**: Adobe Mixamo
-- **Source URL**: [https://huggingface.co/datasets/GbotHQ/mixamo-characters](https://huggingface.co/datasets/GbotHQ/mixamo-characters)
-- **Direct Asset URL**: [https://huggingface.co/datasets/GbotHQ/mixamo-characters/resolve/main/Erika%20Archer.fbx](https://huggingface.co/datasets/GbotHQ/mixamo-characters/resolve/main/Erika%20Archer.fbx)
-- **Local File Path**: `assets/rigs/erika_archer.fbx`
-- **Licence**: Mixamo Royalty-Free License (Commercial Use Permitted)
-- **Licence Terms Summary**: Royalty-free commercial license permitting use in interactive 3D applications, games, films, and video animations.
-- **Commercial-Use Verification**: Verified royalty-free commercial license for animations and video productions.
-- **Attribution Statement**:
-  > Character model: "Erika Archer" (female elf archer) by Adobe Mixamo.
-- **Technical Characteristics**:
-  - Format: Binary FBX (Kaydara 7.4.0 format)
-  - Texture Mapping: Multi-mesh PBR setup (eyes, eyelashes, clothes, body) with embedded high-resolution PNG texture maps
-  - Armature Hierarchy: Standard humanoid hierarchy with 67 total bones (22 retargeted core bones, plus finger chains)
-  - Character Details: Detailed elven facial features, elongated pointed elf ears, leather archer tunic, bracers, and boots
-  - Kinematic Guarantees:
-    - Rest Forward Kinematics (FK) Error: $7.608 \times 10^{-11}$ (well within the $< 10^{-4}$ tolerance threshold)
-    - Rest Linear Blend Skinning Error: $0.8288\text{ cm}$
-  - Quality Assurance: Passes `v2bm.checks.check_rig()`, retargets smoothly, exports compliant glTF 2.0 (`.glb`), and renders in studio lighting via headless Blender.
 
 ---
 

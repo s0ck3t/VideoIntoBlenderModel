@@ -23,5 +23,5 @@ All notable changes to this project will be documented in this file.
 - Validate dependencies and user-provided assets with `v2bm doctor`.
 - Select CPU, CUDA, or Apple Silicon MPS for motion extraction.
 
-[Unreleased]: https://localhost/VideoIntoBlenderModel/compare/v0.1.0...HEAD
-[0.1.0]: https://localhost/VideoIntoBlenderModel/releases/tag/v0.1.0
+[Unreleased]: https://github.com/s0ck3t/VideoIntoBlenderModel/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/s0ck3t/VideoIntoBlenderModel/releases/tag/v0.1.0

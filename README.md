@@ -6,6 +6,7 @@
 [![Blender: 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B_%7C_5.2_LTS-ea7600.svg)](blender_extension/README.md)
 [![CUDA: Optional GPU Acceleration](https://img.shields.io/badge/NVIDIA_CUDA-Optional_All_Stages-76b900.svg)](#35-optional-nvidia-cuda-gpu-acceleration-across-all-pipeline-stages)
 [![glTF: 2.0 Binary](https://img.shields.io/badge/Export-glTF_2.0_(.glb)-8a2be2.svg)](#5-gltf-20-binary-export--uv-seam-splitting)
+[![Sponsor: s0ck3t](https://img.shields.io/badge/Sponsor-%E2%9D%A4_s0ck3t-ea4aaa.svg?logo=github-sponsors)](https://github.com/sponsors/s0ck3t)
 
 ![VideoIntoBlenderModel Banner](docs/assets/repo_poster.png)
 
@@ -22,7 +23,7 @@
    - [Comparison Against Traditional Academic Pipelines](#comparison-against-traditional-academic-pipelines)
    - [Automated AST & Licence Compliance Gate](#automated-ast--licence-compliance-gate)
 2. [Showcase & Production Examples](#2-showcase--production-examples)
-   - [Example 1: Kung Fu Martial Arts Forms → Erika Archer Elven Rig](#example-1-kung-fu-martial-arts-forms--erika-archer-elven-rig)
+   - [Example 1: Kung Fu Martial Arts Forms → Custom Mixamo Character Rig](#example-1-kung-fu-martial-arts-forms--custom-mixamo-character-rig)
    - [Example 2: Athletic Breakdance Kick-up → Kenney Skater Male Rig](#example-2-athletic-breakdance-kick-up--kenney-skater-male-rig)
    - [Example 3: Breakdance Six-Step Footwork → Kenney Retro Female Rig](#example-3-breakdance-six-step-footwork--kenney-retro-female-rig)
    - [Example 4: Urban Basketball Court Choreography → Procedural Studio Humanoid Rig](#example-4-urban-basketball-court-choreography--procedural-studio-humanoid-rig)
@@ -48,6 +49,7 @@
    - [Headless Blender Studio Rendering](#92-headless-blender-studio-rendering)
 10. [Testing, Mathematical Verification & Quality Gates](#10-testing-mathematical-verification--quality-gates)
 11. [Licence & Third-Party Notices](#11-licence--third-party-notices)
+12. [Support the Project](#12-support-the-project)
 
 ---
 
@@ -74,7 +76,6 @@ Most open-source video-to-3D human motion projects cannot legally be used in com
 | **Default Studio Humanoid Rig** | `assets/rigs/humanoid_rig.fbx` | Procedural (`scripts/generate_humanoid_rig.py`) | `CC0-1.0` | **Permitted** | Free | None |
 | **Kenney Skater Male Rig** | `assets/rigs/kenney_skater.fbx` + `.png` | Kenney Vleugels ([Kenney.nl](https://kenney.nl)) | `CC0-1.0` | **Permitted** | Free | None |
 | **Kenney Retro Female Rig** | `assets/rigs/kenney_female.fbx` + `.png` | Kenney Vleugels ([Kenney.nl](https://kenney.nl)) | `CC0-1.0` | **Permitted** | Free | None |
-| **Erika Archer Elven Rig** | `assets/rigs/erika_archer.fbx` | Adobe Mixamo | `Royalty-Free` | **Permitted** | Free | None |
 | **Bundled Kung Fu Motion Video** | `assets/video/kung_fu_haikou.mp4` | Anna Frodesiak (Wikimedia Commons) | `CC0-1.0` | **Permitted** | Free | None |
 | **Bundled Breakdance Videos** | `breakdancer_kickup.mp4`, `breakdancer_6step.mp4` | VincaniTV, Neil Sweeney (Wikimedia Commons) | `CC-BY-3.0` | **Permitted** | Free | None |
 | **Bundled Urban & Street Videos** | `urban_dancer_51314.mp4`, `street_dancer_51310.mp4` | Royalty-Free Stock | `Royalty-Free` | **Permitted** | Free | None |
@@ -115,20 +116,21 @@ All six examples below are produced directly by `v2bm` using the commercial-free
 
 ---
 
-### Example 1: Kung Fu Martial Arts Forms → Erika Archer Elven Rig
+### Example 1: Kung Fu Martial Arts Forms → Custom Mixamo Character Rig
 
-![Kung Fu Martial Arts Form to Erika Archer Elven Rig](docs/assets/examples/showcase_kung_fu_erika.png)
+![Kung Fu Martial Arts Form to Custom Mixamo Rig](docs/assets/examples/showcase_kung_fu_erika.png)
 
-A martial artist executing dynamic kung fu stances, deep horse-stance transitions, and high-velocity palm strikes in an outdoor park, retargeted onto **Erika Archer**, a multi-mesh high-resolution elven archer rig (67 total bones, 4 PBR-textured sub-meshes: body, tunic/boots, eyes, and eyelashes).
+A martial artist executing dynamic kung fu stances, deep horse-stance transitions, and high-velocity palm strikes in an outdoor park, retargeted onto a custom third-party Mixamo character rig (**Erika Archer**, 67 total bones, 4 PBR-textured sub-meshes: body, tunic/boots, eyes, and eyelashes).
 
 ```bash
-v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx
+# With bundled CC0 rig (or pass any custom Mixamo / VRM .fbx to --rig):
+v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/humanoid_rig.fbx
 ```
 
 | Metric / Property | Value |
 | :--- | :--- |
 | **Input Video** | `assets/video/kung_fu_haikou.mp4` (`720×480` @ `29.97 fps`, `149 frames`, `CC0-1.0` Public Domain) |
-| **Target Character Rig** | `assets/rigs/erika_archer.fbx` (`67 bones`, `22 controlled core bones`, embedded PBR PNG textures, `Royalty-Free`) |
+| **Target Character Rig** | Custom Mixamo `.fbx` (`67 bones`, `22 controlled core bones`, embedded PBR PNG textures) |
 | **Rest Forward Kinematics Error** | $7.61 \times 10^{-11}$ (threshold $< 10^{-4}$) |
 | **Temporal Continuity** | `0` discrete $180^\circ$ twist jumps · `0` antipodal quaternion sign flips |
 
@@ -381,7 +383,7 @@ You do not need to manually rename bones in Blender before running `v2bm`. [`v2b
 **Linux / macOS:**
 
 ```bash
-git clone https://github.com/your-org/VideoIntoBlenderModel.git
+git clone https://github.com/s0ck3t/VideoIntoBlenderModel.git
 cd VideoIntoBlenderModel
 python3 -m venv venv
 source venv/bin/activate
@@ -395,7 +397,7 @@ pip install -e ".[cuda]"
 **Windows (PowerShell):**
 
 ```powershell
-git clone https://github.com/your-org/VideoIntoBlenderModel.git
+git clone https://github.com/s0ck3t/VideoIntoBlenderModel.git
 cd VideoIntoBlenderModel
 python -m venv venv
 .\venv\Scripts\python.exe -m pip install --upgrade pip
@@ -432,8 +434,8 @@ Or run with **NVIDIA CUDA GPU acceleration** across all pipeline stages (`--devi
 # Run on NVIDIA CUDA GPU (CuPy + NVENC hardware video encoding):
 v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx --device cuda
 
-# Retarget Kung Fu martial arts onto the Erika Archer elven rig:
-v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx --device cuda
+# Retarget Kung Fu martial arts onto the studio humanoid rig:
+v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/humanoid_rig.fbx --device cuda
 
 # Retarget Breakdance Six-Step onto the Kenney Retro Female rig:
 v2bm run --video assets/video/breakdancer_6step.mp4 --rig assets/rigs/kenney_female.fbx --device cuda
@@ -623,3 +625,14 @@ $env:PYTHONPATH="."; .\venv\Scripts\python.exe -m pytest -v
 - **Source Code**: Licensed under the **Apache License, Version 2.0** (see [`LICENSE`](LICENSE)).
 - **Third-Party Software Notices**: See [`NOTICE.md`](NOTICE.md) for attributions covering Google MediaPipe (`Apache-2.0`), OpenCV (`Apache-2.0`), NumPy (`BSD-3-Clause`), SciPy (`BSD-3-Clause`), and optional CuPy (`MIT`).
 - **Media & 3D Character Rig Register**: See [`assets/LICENCES.md`](assets/LICENCES.md) and [`assets/licences.json`](assets/licences.json) for full provenance and licence verification of all bundled videos and character rigs.
+
+---
+
+## 12. Support the Project
+
+`VideoIntoBlenderModel` (`v2bm`) is — and will always remain — **100% free and open-source (`Apache-2.0`)** for both personal and commercial studio use, with zero subscriptions, paywalls, or royalty obligations.
+
+If this pipeline saves your game, film, or animation project time or motion-capture budget, optional sponsorships and donations are warmly appreciated and help fund continued development:
+
+[![Sponsor s0ck3t on GitHub Sponsors](https://img.shields.io/badge/GitHub_Sponsors-%E2%9D%A4_Sponsor_s0ck3t-ea4aaa?style=for-the-badge&logo=github-sponsors)](https://github.com/sponsors/s0ck3t)
+

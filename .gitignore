@@ -7,9 +7,10 @@ secrets.yaml
 *.key
 *credentials*.json
 
-# ── Scratch / intermediate rig files ─────────────────────────
+# ── Scratch / intermediate / local-only rig files ────────────
 assets/rigs/*.log
 assets/rigs/*.blend
+assets/rigs/erika_archer.fbx
 
 # ── Auto-downloaded inference weights ────────────────────────
 weights/**

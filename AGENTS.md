@@ -17,7 +17,7 @@ All bundled rigs, weights, and example assets are 100% permissive and free for c
 
 | What | Where to put it | Source |
 | --- | --- | --- |
-| Humanoid character | `assets/rigs/humanoid_rig.fbx` (or `kenney_skater.fbx`, `kenney_female.fbx`, `erika_archer.fbx`) | Bundled CC0 / Royalty-Free rigs, or any custom FBX Binary in T-pose |
+| Humanoid character | `assets/rigs/humanoid_rig.fbx` (or `kenney_skater.fbx`, `kenney_female.fbx`) | Bundled CC0 rigs, or any custom FBX Binary in T-pose |
 | Input video | `assets/video/<name>.mp4` | Single clearly visible person (or multi-person with `--target-subject`) |
 | Input still | `assets/image/<name>.png` | Single clearly visible person, head to toe (optional; `--image`) |
 
@@ -28,7 +28,7 @@ Inference weights (`weights/mediapipe/pose_landmarker_full.task`, ~9 MB, Apache-
 ```bash
 v2bm doctor        # verify assets + dependencies; prints what is missing and where to get it
 v2bm run           # latest video in assets/video/ + assets/rigs/humanoid_rig.fbx
-v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx --device cuda
+v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/humanoid_rig.fbx --device cuda
 v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx --device cuda
 v2bm run --image assets/image/urban_dancer_pose.png --rig assets/rigs/humanoid_rig.fbx --device cuda
 v2bm run --skeleton outputs/<run>/skeleton_motion.npz --rig ...   # reuse extraction, swap rig

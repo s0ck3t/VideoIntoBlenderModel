@@ -7,7 +7,7 @@ tagline = "Transfer human motion from video to Humanoid characters"
 maintainer = "VideoIntoBlenderModel Contributors"
 type = "add-on"
 
-website = "https://localhost/VideoIntoBlenderModel"
+website = "https://github.com/s0ck3t/VideoIntoBlenderModel"
 tags = ["Animation", "Import-Export"]
 blender_version_min = "4.2.0"
 

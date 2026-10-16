@@ -90,7 +90,7 @@ In the **Input** section:
 
 1. **Source Type**: Choose `Video` or `Image`.
 2. **Source File**: Select your input video clip or still photograph.
-3. **Humanoid Rig FBX**: Choose `assets/rigs/humanoid_rig.fbx`, `kenney_skater.fbx`, `kenney_female.fbx`, `erika_archer.fbx`, or any custom humanoid `.fbx`.
+3. **Humanoid Rig FBX**: Choose `assets/rigs/humanoid_rig.fbx`, `kenney_skater.fbx`, `kenney_female.fbx`, or any custom humanoid `.fbx`.
 4. Leave **Generate Preview Videos** unticked for fastest turnaround, or tick it to also render diagnostic `.mp4` / `.png` previews.
 5. Click **Generate Motion**.
 
