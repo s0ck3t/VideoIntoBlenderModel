@@ -461,6 +461,8 @@ def draw_mesh(
     colors: list[np.ndarray],
     cam: Camera,
     ambient: float = 0.30,
+    *,
+    device: str = "cpu",
 ) -> None:
     """Back-to-front painter fill with Lambert shading from a head-on key light.
 
@@ -469,6 +471,22 @@ def draw_mesh(
     side already sits low, so too little of it crushes the whole part to black.
     """
     import cv2
+
+    from ..cuda_accel import project_and_shade_mesh_cuda, use_cupy
+
+    if use_cupy(device):
+        res = project_and_shade_mesh_cuda(vertices, faces, colors, cam, ambient=ambient)
+        if res is None:
+            return
+        tri, rgb = res
+        for i in range(tri.shape[0]):
+            cv2.fillConvexPoly(
+                img,
+                tri[i],
+                (int(rgb[i, 0]), int(rgb[i, 1]), int(rgb[i, 2])),
+                cv2.LINE_8,
+            )
+        return
 
     polys: list[np.ndarray] = []
     shades: list[np.ndarray] = []
@@ -602,17 +620,32 @@ def write_video(path, frames_bgr: list[np.ndarray], fps: float) -> None:
     writer.release()
 
 
-def encode_h264(src, dst) -> bool:
+def encode_h264(src, dst, device: str = "cpu") -> bool:
     """Re-encode with ffmpeg when available so the clip plays in browsers."""
     import shutil
     import subprocess
 
+    from ..cuda_accel import ffmpeg_video_encode_args, use_nvenc
+
     if shutil.which("ffmpeg") is None:
         return False
+    encode_args = ffmpeg_video_encode_args(device, crf=20)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", str(src),
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
+        *encode_args,
         str(dst),
     ]
-    return subprocess.run(cmd, check=False).returncode == 0
+    res = subprocess.run(cmd, check=False)
+    if res.returncode == 0:
+        return True
+    if use_nvenc(device):
+        cmd_cpu = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(src),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
+            str(dst),
+        ]
+        return subprocess.run(cmd_cpu, check=False).returncode == 0
+    return False
+

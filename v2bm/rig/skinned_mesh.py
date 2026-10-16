@@ -684,8 +684,13 @@ def bone_palette(world: dict[str, np.ndarray], mesh: SkinnedMesh, order: list[st
     return mats @ mesh.ibm
 
 
-def skin_mesh(mesh: SkinnedMesh, palette: np.ndarray) -> np.ndarray:
+def skin_mesh(mesh: SkinnedMesh, palette: np.ndarray, device: str = "cpu") -> np.ndarray:
     """Linear blend skinning. palette is (B, 4, 4) = M_world @ IBM."""
+    from ..cuda_accel import skin_mesh_cuda, use_cupy
+
+    if use_cupy(device):
+        return skin_mesh_cuda(mesh.vertices, mesh.weights, palette)
+
     ones = np.ones((mesh.vertices.shape[0], 1), dtype=np.float64)
     vh = np.concatenate([mesh.vertices, ones], axis=1)
     posed = np.zeros((mesh.vertices.shape[0], 4), dtype=np.float64)
@@ -702,6 +707,7 @@ def posed_vertices(
     r_anim: dict[str, np.ndarray],
     hips_translation_cm: np.ndarray,
     lcl_translations_cm: dict[str, np.ndarray] | None = None,
+    device: str = "cpu",
 ) -> list[np.ndarray]:
     world = forward_kinematics(
         asset.rig,
@@ -712,7 +718,7 @@ def posed_vertices(
     out: list[np.ndarray] = []
     for mesh in asset.meshes:
         palette = bone_palette(world, mesh, asset.rig.order)
-        out.append(skin_mesh(mesh, palette))
+        out.append(skin_mesh(mesh, palette, device=device))
     return out
 
 
@@ -724,3 +730,4 @@ def rest_skin_error(asset: HumanoidRigAsset) -> float:
         posed = skin_mesh(mesh, bone_palette(world, mesh, asset.rig.order))
         err = max(err, float(np.linalg.norm(posed - mesh.vertices, axis=1).max()))
     return err
+

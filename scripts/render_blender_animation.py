@@ -42,7 +42,59 @@ def parse_args():
     parser.add_argument("--log", type=Path, default=None, help="Path to log file")
     parser.add_argument("--res-x", type=int, default=1280, help="Render width")
     parser.add_argument("--res-y", type=int, default=720, help="Render height")
+    parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda", "auto"),
+        default="auto",
+        help="Compute device for rendering and FFmpeg video encoding (default: auto)",
+    )
     return parser.parse_args(script_args)
+
+
+def _configure_blender_cuda(scene, device_choice: str, log_fp=None) -> None:
+    """Configure Blender GPU compute devices when CUDA/auto is selected."""
+    if device_choice == "cpu":
+        return
+    try:
+        import bpy
+
+        cycles_Addon = bpy.context.preferences.addons.get("cycles")
+        if cycles_Addon:
+            cprefs = cycles_Addon.preferences
+            for dev_type in ("OPTIX", "CUDA"):
+                try:
+                    cprefs.compute_device_type = dev_type
+                    cprefs.get_devices()
+                    gpu_devs = [d for d in cprefs.devices if d.type in ("OPTIX", "CUDA")]
+                    if gpu_devs:
+                        for d in cprefs.devices:
+                            d.use = d.type in ("OPTIX", "CUDA")
+                        if hasattr(scene, "cycles"):
+                            scene.cycles.device = "GPU"
+                        log(
+                            f"Enabled Blender GPU compute ({dev_type}): "
+                            + ", ".join(d.name for d in gpu_devs),
+                            log_fp,
+                        )
+                        return
+                except Exception:
+                    continue
+    except Exception as exc:
+        log(f"Blender GPU device setup note: {exc}", log_fp)
+
+
+def _ffmpeg_supports_nvenc() -> bool:
+    try:
+        res = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        return "h264_nvenc" in (res.stdout or "")
+    except Exception:
+        return False
 
 
 def main():
@@ -58,10 +110,12 @@ def main():
         log(f"Blender version: {bpy.app.version_string}", log_fp)
         log(f"Input GLB: {args.glb}", log_fp)
         log(f"Output MP4: {args.output}", log_fp)
+        log(f"Requested device: {args.device}", log_fp)
 
         # 1. Reset scene to empty
         bpy.ops.wm.read_factory_settings(use_empty=True)
         scene = bpy.context.scene
+        _configure_blender_cuda(scene, args.device, log_fp)
 
         # Set target FPS before GLB import so Blender maps keyframe timestamps 1:1 to frames
         target_fps = 24
@@ -236,41 +290,65 @@ def main():
         log("Blender animation rendering complete. Compiling frames to MP4 with ffmpeg...", log_fp)
         args.output.parent.mkdir(parents=True, exist_ok=True)
 
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-y",
-            "-framerate",
-            str(scene.render.fps),
-            "-start_number",
-            str(start_frame),
-            "-i",
-            str(temp_frames_dir / "frame_%04d.png"),
-        ]
-        if audio_source is not None:
-            ffmpeg_cmd.extend(["-i", str(audio_source)])
-        ffmpeg_cmd.extend([
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-crf",
-            "18",
-            "-preset",
-            "fast",
-        ])
-        if audio_source is not None:
-            ffmpeg_cmd.extend([
-                "-c:a",
-                "aac",
-                "-map",
-                "0:v:0",
-                "-map",
-                "1:a:0?",
-                "-shortest",
-            ])
-        ffmpeg_cmd.append(str(args.output.resolve()))
+        use_nvenc = args.device in ("cuda", "auto") and _ffmpeg_supports_nvenc()
+
+        def _build_ffmpeg_cmd(nvenc: bool) -> list[str]:
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-framerate",
+                str(scene.render.fps),
+                "-start_number",
+                str(start_frame),
+                "-i",
+                str(temp_frames_dir / "frame_%04d.png"),
+            ]
+            if audio_source is not None:
+                cmd.extend(["-i", str(audio_source)])
+            if nvenc:
+                cmd.extend([
+                    "-c:v",
+                    "h264_nvenc",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-preset",
+                    "p4",
+                    "-rc",
+                    "vbr",
+                    "-cq",
+                    "18",
+                ])
+            else:
+                cmd.extend([
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-crf",
+                    "18",
+                    "-preset",
+                    "fast",
+                ])
+            if audio_source is not None:
+                cmd.extend([
+                    "-c:a",
+                    "aac",
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "1:a:0?",
+                    "-shortest",
+                ])
+            cmd.append(str(args.output.resolve()))
+            return cmd
+
+        ffmpeg_cmd = _build_ffmpeg_cmd(use_nvenc)
         log(f"Running ffmpeg: {' '.join(ffmpeg_cmd)}", log_fp)
         res = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if res.returncode != 0 and use_nvenc:
+            log("NVENC encoding failed, falling back to libx264...", log_fp)
+            ffmpeg_cmd = _build_ffmpeg_cmd(False)
+            res = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
         if res.returncode != 0:
             log(f"ffmpeg failed (code {res.returncode}):\n{res.stderr}", log_fp)
             raise RuntimeError(f"ffmpeg conversion failed: {res.stderr}")

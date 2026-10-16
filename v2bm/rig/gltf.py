@@ -58,7 +58,12 @@ def _scale_affine(mat: np.ndarray, scale: float) -> np.ndarray:
     return out
 
 
-def _top4_weights(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _top4_weights(weights: np.ndarray, device: str = "cpu") -> tuple[np.ndarray, np.ndarray]:
+    from ..cuda_accel import top4_weights_cuda, use_cupy
+
+    if use_cupy(device):
+        return top4_weights_cuda(weights)
+
     n_bones = weights.shape[1]
     take = min(4, n_bones)
     order = np.argpartition(-weights, take - 1, axis=1)[:, :take]
@@ -72,7 +77,12 @@ def _top4_weights(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return order.astype(np.uint16), w.astype(np.float32)
 
 
-def _vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
+def _vertex_normals(vertices: np.ndarray, faces: np.ndarray, device: str = "cpu") -> np.ndarray:
+    from ..cuda_accel import use_cupy, vertex_normals_cuda
+
+    if use_cupy(device):
+        return vertex_normals_cuda(vertices, faces)
+
     normals = np.zeros_like(vertices, dtype=np.float64)
     p0, p1, p2 = vertices[faces[:, 0]], vertices[faces[:, 1]], vertices[faces[:, 2]]
     face_n = np.cross(p1 - p0, p2 - p0)
@@ -137,8 +147,12 @@ def write_glb(
     r_anim_frames: list[dict[str, np.ndarray]],
     hips_cm_frames: list[np.ndarray],
     fps: float,
+    *,
+    device: str = "cpu",
 ) -> Path:
     """Skinned character + clip → a single `.glb` file."""
+    from ..cuda_accel import accumulate_vertex_colors_cuda, use_cupy
+
     rig = asset.rig
     scale = float(rig.meters_per_unit)
     identity = np.eye(3)
@@ -225,16 +239,16 @@ def write_glb(
         if has_uvs:
             faces, v_map, split_uvs = _split_mesh_uvs(mesh.faces, mesh.uvs)
             verts = (mesh.vertices[v_map] * scale).astype(np.float32)
-            joints, weights = _top4_weights(mesh.weights[v_map])
+            joints, weights = _top4_weights(mesh.weights[v_map], device=device)
             orig_normals = _vertex_normals(
-                (mesh.vertices * scale).astype(np.float64), mesh.faces
+                (mesh.vertices * scale).astype(np.float64), mesh.faces, device=device
             )
             normals = orig_normals[v_map]
         else:
             verts = (mesh.vertices * scale).astype(np.float32)
             faces = np.ascontiguousarray(mesh.faces, dtype=np.uint32)
-            joints, weights = _top4_weights(mesh.weights)
-            normals = _vertex_normals(verts.astype(np.float64), mesh.faces)
+            joints, weights = _top4_weights(mesh.weights, device=device)
+            normals = _vertex_normals(verts.astype(np.float64), mesh.faces, device=device)
             v_map = None
 
         attrs = {
@@ -296,16 +310,21 @@ def write_glb(
             mat_def["pbrMetallicRoughness"]["baseColorFactor"] = base_color_factor
 
             if has_face_colors:
-                # Convert BGR (0..255) face colours to per-vertex RGBA (0..1)
-                face_rgb = (mesh.face_colors[:, [2, 1, 0]] / 255.0).astype(np.float64)
                 orig_v_count = mesh.vertices.shape[0]
-                v_colors = np.zeros((orig_v_count, 3), dtype=np.float64)
-                v_counts = np.zeros((orig_v_count, 1), dtype=np.float64)
-                for i in range(3):
-                    np.add.at(v_colors, mesh.faces[:, i], face_rgb)
-                    np.add.at(v_counts, mesh.faces[:, i], 1.0)
-                v_colors = v_colors / np.maximum(v_counts, 1.0)
-                v_colors = np.clip(v_colors, 0.0, 1.0).astype(np.float32)
+                if use_cupy(device):
+                    v_colors = accumulate_vertex_colors_cuda(
+                        mesh.face_colors, mesh.faces, orig_v_count
+                    )
+                else:
+                    # Convert BGR (0..255) face colours to per-vertex RGBA (0..1)
+                    face_rgb = (mesh.face_colors[:, [2, 1, 0]] / 255.0).astype(np.float64)
+                    v_colors = np.zeros((orig_v_count, 3), dtype=np.float64)
+                    v_counts = np.zeros((orig_v_count, 1), dtype=np.float64)
+                    for i in range(3):
+                        np.add.at(v_colors, mesh.faces[:, i], face_rgb)
+                        np.add.at(v_counts, mesh.faces[:, i], 1.0)
+                    v_colors = v_colors / np.maximum(v_counts, 1.0)
+                    v_colors = np.clip(v_colors, 0.0, 1.0).astype(np.float32)
                 if v_map is not None:
                     v_colors = v_colors[v_map]
                 v_colors_rgba = np.concatenate(

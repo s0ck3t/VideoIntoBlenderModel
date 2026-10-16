@@ -126,6 +126,21 @@ def run_pipeline(
     writer = progress if progress is not None else ProgressWriter(progress_jsonl)
     stage = "extract"
     try:
+        from .cuda_accel import get_cuda_capabilities, resolve_device
+
+        active_device = resolve_device(device)
+        caps = get_cuda_capabilities()
+        if verbose:
+            print(
+                f"compute device {active_device}"
+                + (
+                    f" ({caps.device_name}, cupy={'on' if caps.cupy_available else 'off'}, "
+                    f"nvenc={'on' if caps.ffmpeg_nvenc else 'off'})"
+                    if active_device == "cuda"
+                    else ""
+                )
+            )
+
         extract_video = video
 
         # Automated multi-person isolation when target_subject is specified
@@ -133,7 +148,7 @@ def run_pipeline(
             from . import checks
             from .isolate import isolate_video_subject
 
-            n_people = checks.video_person_count(extract_video)
+            n_people = checks.video_person_count(extract_video, device=active_device)
             if n_people >= 2 or target_subject != "auto":
                 stage = "isolate"
                 writer.emit("isolate", 0.08, f"Isolating target performer ({target_subject})")
@@ -145,6 +160,7 @@ def run_pipeline(
                     extract_video,
                     isolated_path,
                     target=target_subject,
+                    device=active_device,
                     verbose=verbose,
                 )
 
@@ -161,12 +177,12 @@ def run_pipeline(
             from .extract import extract_motion, temp_hold_video
 
             print(f"extracting human pose from {image.name}")
-            with temp_hold_video(image) as hold:
+            with temp_hold_video(image, device=active_device) as hold:
                 extract_motion(
                     hold,
                     motion_npz,
                     work_dir=run_dir / "cache",
-                    device=device,
+                    device=active_device,
                     verbose=verbose,
                     source_image=image,
                 )
@@ -179,7 +195,7 @@ def run_pipeline(
                 extract_video,
                 motion_npz,
                 work_dir=run_dir / "cache",
-                device=device,
+                device=active_device,
                 verbose=verbose,
             )
         motion: HumanMotion = load_human_motion(motion_npz)
@@ -198,8 +214,8 @@ def run_pipeline(
 
         print("retargeting")
         frames = list(range(motion.n_frames))
-        anim = build_animation(motion, mapping, frames, verbose=verbose)
-        pin_character_mesh_to_ground(asset, anim)
+        anim = build_animation(motion, mapping, frames, verbose=verbose, device=active_device)
+        pin_character_mesh_to_ground(asset, anim, device=active_device)
 
         rotations_npz = run_dir / "rig_rotations.npz"
         save_rig_rotations(anim, mapping, rig, rotations_npz)
@@ -208,7 +224,14 @@ def run_pipeline(
         stage = "export"
         writer.emit("export", 0.85, "Writing GLB")
         glb_path = run_dir / "character_animation.glb"
-        write_glb(glb_path, asset, anim.r_anim_rig, anim.hips_cm_rig, anim.fps)
+        write_glb(
+            glb_path,
+            asset,
+            anim.r_anim_rig,
+            anim.hips_cm_rig,
+            anim.fps,
+            device=active_device,
+        )
         print(f"saved {glb_path}")
 
         outputs = {
@@ -222,7 +245,13 @@ def run_pipeline(
             if image is not None:
                 print("rendering result images")
                 previews = render_run_images(
-                    anim, asset, calibration, image, run_dir / "images", verbose=verbose
+                    anim,
+                    asset,
+                    calibration,
+                    image,
+                    run_dir / "images",
+                    verbose=verbose,
+                    device=active_device,
                 )
                 outputs["images"] = {k: f"images/{v.name}" for k, v in previews.items()}
             else:
@@ -236,6 +265,7 @@ def run_pipeline(
                     run_dir / "videos",
                     original_label="Original Video",
                     verbose=verbose,
+                    device=active_device,
                 )
                 outputs["videos"] = {k: f"videos/{v.name}" for k, v in previews.items()}
 
@@ -249,7 +279,19 @@ def run_pipeline(
             "isolated_video": str(extract_video) if extract_video != video else None,
             "image": str(image) if image is not None else None,
             "rig": str(rig),
-            "device": device,
+            "device": active_device,
+            "requested_device": device,
+            "cuda_capabilities": {
+                "cuda_available": caps.cuda_available,
+                "cupy_available": caps.cupy_available,
+                "device_name": caps.device_name,
+                "compute_capability": caps.compute_capability,
+                "vram_gb": caps.vram_gb,
+                "ffmpeg_nvenc": caps.ffmpeg_nvenc,
+                "ffmpeg_cuvid": caps.ffmpeg_cuvid,
+            }
+            if active_device == "cuda"
+            else None,
             "fps": float(motion.fps),
             "n_frames": motion.n_frames,
             "skeleton_reused_from": str(skeleton_npz) if skeleton_npz else None,

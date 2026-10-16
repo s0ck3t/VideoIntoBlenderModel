@@ -37,6 +37,10 @@ APPROVED_PERMISSIVE_PACKAGES = {
     "pytest",
     "einops",
     "setuptools",
+    "cupy",
+    "cupy-cuda12x",
+    "cupy-cuda13x",
+    "cuda-pathfinder",
 }
 
 

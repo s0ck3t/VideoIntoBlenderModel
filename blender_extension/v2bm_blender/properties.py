@@ -31,6 +31,7 @@ def _device_items(self, context):
     _DEVICE_ITEMS = (
         ("cpu", "CPU", t("device_cpu_desc")),
         ("cuda", "CUDA", t("device_cuda_desc")),
+        ("auto", "Auto", t("device_auto_desc")),
         ("mps", "MPS", t("device_mps_desc")),
     )
     return _DEVICE_ITEMS

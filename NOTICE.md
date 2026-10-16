@@ -28,8 +28,15 @@ NumPy and SciPy are licensed under the modified BSD-3-Clause licence.
 Copyright (c) 2005-2026, NumPy and SciPy Developers.
 https://numpy.org/ and https://scipy.org/
 
+## CuPy (Optional NVIDIA CUDA GPU Acceleration)
+
+CuPy (`cupy`, `cupy-cuda11x`, `cupy-cuda12x`, `cupy-cuda13x`) is licensed under the MIT Licence.
+Copyright (c) 2015 Preferred Infrastructure, Inc. and Preferred Networks, Inc.
+https://cupy.dev/
+
 ## Commercial Use Guarantee
 
 All dependencies, models, and assets in this repository are strictly permissive (Apache-2.0,
 MIT, BSD, and CC0). The entire pipeline is 100% free for unrestricted commercial use with zero
 financial cost and zero non-commercial or copyleft (AGPL) restrictions.
+

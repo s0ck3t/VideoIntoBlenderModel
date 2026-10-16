@@ -24,6 +24,7 @@ _PERSON_CONF = 0.5
 _PERSON_MIN_AREA = 0.015
 
 _detector = None
+_detector_device: str | None = None
 
 
 def ensure_mediapipe_model(target_path: Path | None = None) -> Path:
@@ -44,16 +45,37 @@ def ensure_mediapipe_model(target_path: Path | None = None) -> Path:
     return target_path
 
 
-def _get_person_detector():
+def _get_person_detector(device: str = "cpu"):
     """Google MediaPipe PoseLandmarker (Apache-2.0), reused across checks."""
-    global _detector
-    if _detector is not None:
+    global _detector, _detector_device
+    from .cuda_accel import get_cuda_capabilities, resolve_device, use_cuda
+
+    resolved = resolve_device(device)
+    if _detector is not None and _detector_device == resolved:
         return _detector
 
     from mediapipe.tasks.python import BaseOptions
     from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
 
     model_path = ensure_mediapipe_model()
+    if use_cuda(resolved) and get_cuda_capabilities().mediapipe_gpu_delegate:
+        try:
+            gpu_options = PoseLandmarkerOptions(
+                base_options=BaseOptions(
+                    model_asset_path=str(model_path),
+                    delegate=BaseOptions.Delegate.GPU,
+                ),
+                running_mode=RunningMode.IMAGE,
+                num_poses=4,
+                min_pose_detection_confidence=_PERSON_CONF,
+                min_pose_presence_confidence=_PERSON_CONF,
+            )
+            _detector = PoseLandmarker.create_from_options(gpu_options)
+            _detector_device = resolved
+            return _detector
+        except Exception:
+            pass
+
     options = PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=str(model_path)),
         running_mode=RunningMode.IMAGE,
@@ -62,10 +84,11 @@ def _get_person_detector():
         min_pose_presence_confidence=_PERSON_CONF,
     )
     _detector = PoseLandmarker.create_from_options(options)
+    _detector_device = resolved
     return _detector
 
 
-def _count_people(frame) -> int:
+def _count_people(frame, *, device: str = "cpu") -> int:
     """Count qualifying human subjects in a frame using Google MediaPipe Pose."""
     if frame is None or frame.size == 0:
         return 0
@@ -85,7 +108,7 @@ def _count_people(frame) -> int:
 
     rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-    detector = _get_person_detector()
+    detector = _get_person_detector(device=device)
     result = detector.detect(mp_image)
     if not result or not result.pose_landmarks:
         return 0
@@ -102,7 +125,7 @@ def _count_people(frame) -> int:
     return count
 
 
-def check_video(path: Path, *, allow_multi: bool = False) -> str | None:
+def check_video(path: Path, *, allow_multi: bool = False, device: str = "cpu") -> str | None:
     """Decodable, and a single person on the sampled frames (or multi if allow_multi is True)."""
     import cv2
 
@@ -131,7 +154,7 @@ def check_video(path: Path, *, allow_multi: bool = False) -> str | None:
         if not ok:
             break
         if idx in sample:
-            counts.append(_count_people(frame))
+            counts.append(_count_people(frame, device=device))
         idx += 1
     cap.release()
     if not counts:
@@ -152,7 +175,7 @@ def check_video(path: Path, *, allow_multi: bool = False) -> str | None:
     return None
 
 
-def video_person_count(path: Path) -> int:
+def video_person_count(path: Path, *, device: str = "cpu") -> int:
     """Return the peak number of human subjects detected in sampled frames of a video."""
     import cv2
 
@@ -172,14 +195,13 @@ def video_person_count(path: Path) -> int:
         if not ok:
             break
         if idx in sample:
-            counts.append(_count_people(frame))
+            counts.append(_count_people(frame, device=device))
         idx += 1
     cap.release()
     return max(counts) if counts else 0
 
 
-
-def check_image(path: Path) -> str | None:
+def check_image(path: Path, *, device: str = "cpu") -> str | None:
     """Decodable still, and exactly one person - same rule as check_video."""
     import cv2
 
@@ -188,7 +210,7 @@ def check_image(path: Path) -> str | None:
         return (
             "cannot be decoded as an image - use a jpg/png/webp still of one person"
         )
-    n = _count_people(frame)
+    n = _count_people(frame, device=device)
     if n >= 2:
         return (
             f"shows about {n} people - this pipeline maps one body "

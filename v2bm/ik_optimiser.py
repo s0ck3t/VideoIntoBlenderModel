@@ -266,6 +266,7 @@ def optimise_trajectory_windowed(
     w_anat: float = 8.0,
     max_nfev: int = 25,
     verbose: bool = False,
+    device: str = "cpu",
 ) -> np.ndarray:
     """Sliding-window 2D-reprojection-constrained IK trajectory optimiser.
 
@@ -290,10 +291,13 @@ def optimise_trajectory_windowed(
         w_anat: Weight on anatomical range-of-motion limits.
         max_nfev: Maximum least_squares iterations per window.
         verbose: Verbose progress reporting flag.
+        device: Compute device ('cpu', 'cuda', 'mps', 'auto').
 
     Returns:
         Optimised array of shape (T, 24, 3) in np.float32.
     """
+    from .cuda_accel import optimise_windows_cuda, use_cupy
+
     data = np.asarray(positions_3d, dtype=np.float64)
     n_frames, n_joints, _ = data.shape
     pairs = bone_pairs or BODY24_BONE_PAIRS
@@ -310,7 +314,7 @@ def optimise_trajectory_windowed(
     if landmarks_2d is not None and len(landmarks_2d) == n_frames:
         l2d = np.asarray(landmarks_2d, dtype=np.float64)
         if l2d.shape[1] == 33:
-            s_body24 = map_screen_to_body24(l2d)
+            s_body24 = map_screen_to_body24(l2d, device=device)
         elif l2d.shape[1] == 24:
             s_body24 = l2d[:, :, :2]
 
@@ -375,50 +379,129 @@ def optimise_trajectory_windowed(
     if window_starts[-1] + W < n_frames:
         window_starts.append(n_frames - W)
 
-    for win_idx, t0 in enumerate(window_starts):
-        t1 = min(t0 + W, n_frames)
-        w_act = t1 - t0
-        if w_act <= 0:
-            continue
+    if use_cupy(device) and n_frames > 0:
+        # Group windows by actual window length (nearly all windows have length W)
+        full_starts = [t0 for t0 in window_starts if min(t0 + W, n_frames) - t0 == W]
+        tail_starts = [t0 for t0 in window_starts if min(t0 + W, n_frames) - t0 != W and min(t0 + W, n_frames) - t0 > 0]
 
-        x_win = data[t0:t1].copy()
-        s_win = s_body24[t0:t1] if s_body24 is not None else None
-        v_win = vis_body24[t0:t1] if vis_body24 is not None else None
-        sc_win = torso_scales[t0:t1] if torso_scales is not None else None
-        f_win = foreshorten_factors[t0:t1]
+        if full_starts:
+            b_x = np.stack([data[t0 : t0 + W] for t0 in full_starts], axis=0)
+            b_s = np.stack([s_body24[t0 : t0 + W] for t0 in full_starts], axis=0) if s_body24 is not None else None
+            b_v = np.stack([vis_body24[t0 : t0 + W] for t0 in full_starts], axis=0) if vis_body24 is not None else None
+            b_sc = np.stack([torso_scales[t0 : t0 + W] for t0 in full_starts], axis=0) if torso_scales is not None else None
+            b_f = np.stack([foreshorten_factors[t0 : t0 + W] for t0 in full_starts], axis=0)
 
-        opt_win = optimise_window(
-            x_win,
-            s_win,
-            v_win,
-            sc_win,
-            pairs,
-            rest_lengths,
-            f_win,
-            w_2d=w_2d,
-            w_3d=w_3d,
-            w_bone=w_bone,
-            w_smooth=w_smooth,
-            w_jerk=w_jerk,
-            w_anat=w_anat,
-            max_nfev=max_nfev,
-        )
+            opt_batch = optimise_windows_cuda(
+                b_x,
+                b_s,
+                b_v,
+                b_sc,
+                pairs,
+                rest_lengths,
+                b_f,
+                w_2d=w_2d,
+                w_3d=w_3d,
+                w_bone=w_bone,
+                w_smooth=w_smooth,
+                w_jerk=w_jerk,
+                w_anat=w_anat,
+                n_iters=max(max_nfev * 2, 40),
+            )
+            if W > 1:
+                indices = np.arange(W, dtype=np.float64)
+                blend_w = 0.5 - 0.5 * np.cos(2.0 * np.pi * (indices + 0.5) / float(W))
+            else:
+                blend_w = np.ones(1, dtype=np.float64)
 
-        # Raised cosine / Hann blending window weights
-        if w_act > 1:
-            indices = np.arange(w_act, dtype=np.float64)
-            blend_w = 0.5 - 0.5 * np.cos(2.0 * np.pi * (indices + 0.5) / float(w_act))
-        else:
-            blend_w = np.ones(1, dtype=np.float64)
+            for b_idx, t0 in enumerate(full_starts):
+                for k in range(W):
+                    t = t0 + k
+                    w_k = blend_w[k]
+                    accum_positions[t] += w_k * opt_batch[b_idx, k]
+                    accum_weights[t] += w_k
 
-        for k in range(w_act):
-            t = t0 + k
-            w_k = blend_w[k]
-            accum_positions[t] += w_k * opt_win[k]
-            accum_weights[t] += w_k
+            if verbose:
+                print(f"  ik optimiser CUDA batch processed {len(full_starts)} windows (W={W})")
 
-        if verbose and (win_idx % 10 == 0 or win_idx == len(window_starts) - 1):
-            print(f"  ik optimiser window {win_idx + 1}/{len(window_starts)} (frames {t0}..{t1})")
+        for t0 in tail_starts:
+            t1 = min(t0 + W, n_frames)
+            w_act = t1 - t0
+            x_win = data[t0:t1].copy()
+            s_win = s_body24[t0:t1] if s_body24 is not None else None
+            v_win = vis_body24[t0:t1] if vis_body24 is not None else None
+            sc_win = torso_scales[t0:t1] if torso_scales is not None else None
+            f_win = foreshorten_factors[t0:t1]
+            opt_win = optimise_windows_cuda(
+                x_win[None, ...],
+                s_win[None, ...] if s_win is not None else None,
+                v_win[None, ...] if v_win is not None else None,
+                sc_win[None, ...] if sc_win is not None else None,
+                pairs,
+                rest_lengths,
+                f_win[None, ...],
+                w_2d=w_2d,
+                w_3d=w_3d,
+                w_bone=w_bone,
+                w_smooth=w_smooth,
+                w_jerk=w_jerk,
+                w_anat=w_anat,
+                n_iters=max(max_nfev * 2, 40),
+            )[0]
+            if w_act > 1:
+                indices = np.arange(w_act, dtype=np.float64)
+                blend_w = 0.5 - 0.5 * np.cos(2.0 * np.pi * (indices + 0.5) / float(w_act))
+            else:
+                blend_w = np.ones(1, dtype=np.float64)
+            for k in range(w_act):
+                t = t0 + k
+                w_k = blend_w[k]
+                accum_positions[t] += w_k * opt_win[k]
+                accum_weights[t] += w_k
+    else:
+        for win_idx, t0 in enumerate(window_starts):
+            t1 = min(t0 + W, n_frames)
+            w_act = t1 - t0
+            if w_act <= 0:
+                continue
+
+            x_win = data[t0:t1].copy()
+            s_win = s_body24[t0:t1] if s_body24 is not None else None
+            v_win = vis_body24[t0:t1] if vis_body24 is not None else None
+            sc_win = torso_scales[t0:t1] if torso_scales is not None else None
+            f_win = foreshorten_factors[t0:t1]
+
+            opt_win = optimise_window(
+                x_win,
+                s_win,
+                v_win,
+                sc_win,
+                pairs,
+                rest_lengths,
+                f_win,
+                w_2d=w_2d,
+                w_3d=w_3d,
+                w_bone=w_bone,
+                w_smooth=w_smooth,
+                w_jerk=w_jerk,
+                w_anat=w_anat,
+                max_nfev=max_nfev,
+            )
+
+            # Raised cosine / Hann blending window weights
+            if w_act > 1:
+                indices = np.arange(w_act, dtype=np.float64)
+                blend_w = 0.5 - 0.5 * np.cos(2.0 * np.pi * (indices + 0.5) / float(w_act))
+            else:
+                blend_w = np.ones(1, dtype=np.float64)
+
+            for k in range(w_act):
+                t = t0 + k
+                w_k = blend_w[k]
+                accum_positions[t] += w_k * opt_win[k]
+                accum_weights[t] += w_k
+
+            if verbose and (win_idx % 10 == 0 or win_idx == len(window_starts) - 1):
+                print(f"  ik optimiser window {win_idx + 1}/{len(window_starts)} (frames {t0}..{t1})")
 
     # Normalise blended positions by accumulated window weights
     valid_weights = np.maximum(accum_weights, 1e-6)[:, None, None]
@@ -427,12 +510,14 @@ def optimise_trajectory_windowed(
     # 4. Final Anatomical Hinge Clamping & Hierarchical Rigid Bone Projection
     # Clamping anatomical hinges first, then hierarchically projecting bone lengths guarantees
     # invariant rigid bone lengths (< 10^-4 m error) while strictly respecting physiological limits.
-    clamped_positions = clamp_anatomical_hinges(blended_positions)
+    clamped_positions = clamp_anatomical_hinges(blended_positions, device=device)
     final_positions = project_rigid_bone_lengths(
         clamped_positions,
         pairs,
         screen_landmarks=landmarks_2d if landmarks_2d is not None and landmarks_2d.shape[1] == 33 else None,
         bone_lengths=rest_lengths,
+        device=device,
     )
 
     return final_positions.astype(np.float32)
+

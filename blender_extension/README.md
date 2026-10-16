@@ -17,8 +17,13 @@ Set up the core Python environment in a terminal first (full details in the [rep
    python -m venv venv
    # Linux / macOS:
    ./venv/bin/pip install -e .
+   # Optional NVIDIA CUDA GPU acceleration (CuPy MIT):
+   ./venv/bin/pip install -e ".[cuda]"
+
    # Windows PowerShell:
    .\venv\Scripts\python.exe -m pip install -e .
+   # Optional NVIDIA CUDA GPU acceleration (CuPy MIT):
+   .\venv\Scripts\python.exe -m pip install -e ".[cuda]"
    ```
 2. Verify that the default CC0 character rig (`assets/rigs/humanoid_rig.fbx`) or your custom `.fbx` character is present in `assets/rigs/`.
 3. Confirm everything passes preflight diagnostics:
@@ -70,7 +75,7 @@ Configure these fields in the **Setup** box (or under **Edit → Preferences →
 | **UI Language** | `Auto` follows Blender / system locale, or select a specific language |
 | **External Python** | Path to your virtualenv Python executable (**not** Blender’s bundled Python) |
 | **Project Directory** | Root directory of this repository (containing `assets/` and `weights/`) |
-| **Device** | `CPU`, `CUDA`, or `MPS` |
+| **Device** | `Auto (CUDA if available)` (default), `CUDA (NVIDIA GPU)`, `CPU`, or `MPS` |
 
 | Platform | Typical External Python Path |
 | :--- | :--- |

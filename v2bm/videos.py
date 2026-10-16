@@ -148,8 +148,8 @@ class _OriginalReader:
 
 
 class _StreamWriter:
-    """Raw BGR frames piped into ffmpeg, which encodes H.264 and muxes the
-    source video's audio over the rendered frame window.
+    """Raw BGR frames piped into ffmpeg, which encodes H.264 (via NVENC or libx264)
+    and muxes the source video's audio over the rendered frame window.
 
     Falls back to a plain (silent) OpenCV writer when ffmpeg is unavailable.
     """
@@ -164,7 +164,10 @@ class _StreamWriter:
         audio_src: Path | None = None,
         audio_start_s: float = 0.0,
         audio_dur_s: float | None = None,
+        device: str = "cpu",
     ):
+        from .cuda_accel import ffmpeg_video_encode_args
+
         self.out_path = Path(out_path)
         self.out_path.parent.mkdir(parents=True, exist_ok=True)
         self.proc = None
@@ -185,9 +188,8 @@ class _StreamWriter:
                 # it has any; -shortest stops the audio with the last frame.
                 cmd += ["-i", str(audio_src), "-map", "0:v:0", "-map", "1:a:0?",
                         "-c:a", "aac", "-b:a", "192k", "-shortest"]
-            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
-                    "-preset", "medium", "-movflags", "+faststart",
-                    str(self.out_path)]
+            encode_args = ffmpeg_video_encode_args(device, crf=18)
+            cmd += [*encode_args, "-movflags", "+faststart", str(self.out_path)]
             self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         else:
             import cv2
@@ -238,11 +240,19 @@ def _letterbox_still(image: Path, width: int, height: int) -> np.ndarray:
     return fit_letterbox(frame, width, height)
 
 
-def _setup_view(anim: RetargetedAnimation, asset, calibration, width: int, height: int):
+def _setup_view(
+    anim: RetargetedAnimation,
+    asset,
+    calibration,
+    width: int,
+    height: int,
+    *,
+    device: str = "cpu",
+):
     """Shared camera, floor and backdrops for the three rendered panels."""
     axes = calibration.rig_axes
     stride = max(1, anim.n // CAMERA_MESH_SAMPLES)
-    probe = skin_frames(asset, anim, list(range(0, anim.n, stride)))
+    probe = skin_frames(asset, anim, list(range(0, anim.n, stride)), device=device)
     frames_pts = [np.concatenate(v, axis=0) for v in probe]
     del probe
     soles = np.array([float(pts[:, 1].min()) for pts in frames_pts])
@@ -296,6 +306,7 @@ def _draw_panels(
     backdrop_grid,
     faces,
     colors,
+    device: str = "cpu",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     character = calibration.fbx_path.stem
 
@@ -312,9 +323,9 @@ def _draw_panels(
     label_panel(p_mix, f"Humanoid Skeleton{stamp}")
 
     p_char = backdrop_grid.copy()
-    verts = skin_frames(asset, anim, [i])[0]
+    verts = skin_frames(asset, anim, [i], device=device)[0]
     draw_shadow(p_char, cam, np.concatenate(verts, axis=0), ground, GRID_THEME)
-    draw_mesh(p_char, verts, faces, colors, cam, CHARACTER_AMBIENT)
+    draw_mesh(p_char, verts, faces, colors, cam, CHARACTER_AMBIENT, device=device)
     label_panel(p_char, f"{character}{stamp}")
 
     p_orig = original.copy()
@@ -331,6 +342,7 @@ def render_run_images(
     *,
     original_label: str = "Original Photo",
     verbose: bool = True,
+    device: str = "cpu",
 ) -> dict[str, Path]:
     """Write the four stills into `out_dir` (images/ of a still run).
  
@@ -341,7 +353,7 @@ def render_run_images(
     out_dir.mkdir(parents=True, exist_ok=True)
     width, height = panel_size(source_image)
     cam, ground, backdrop_dark, backdrop_grid, faces, colors = _setup_view(
-        anim, asset, calibration, width, height
+        anim, asset, calibration, width, height, device=device
     )
     if verbose:
         print(f"  camera eye {np.round(cam.eye, 3)}  fov {cam.fov_deg:.1f} deg"
@@ -356,6 +368,7 @@ def render_run_images(
         cam=cam, ground=ground,
         backdrop_dark=backdrop_dark, backdrop_grid=backdrop_grid,
         faces=faces, colors=colors,
+        device=device,
     )
     out = {
         "human_skeleton": _write_png(out_dir / "human_skeleton.png", p_hum),
@@ -366,7 +379,7 @@ def render_run_images(
     if verbose:
         print("rendering 360 compare")
     out["before_after_360_compare"] = render_orbit_compare(
-        anim, asset, calibration, source_image, out_dir, verbose=verbose
+        anim, asset, calibration, source_image, out_dir, verbose=verbose, device=device
     )
     if verbose:
         for path in out.values():
@@ -447,13 +460,14 @@ def render_orbit_compare(
     out_dir: Path,
     *,
     verbose: bool = True,
+    device: str = "cpu",
 ) -> Path:
     """Left = original photo, right = 10° orbit of the skinned rig. Image runs only."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     width, height = panel_size(source_image)
     i = anim.n // 2
-    verts = skin_frames(asset, anim, [i])[0]
+    verts = skin_frames(asset, anim, [i], device=device)[0]
     mesh_pts = np.concatenate(verts, axis=0)
     axes = calibration.rig_axes
     target = 0.5 * (mesh_pts.min(axis=0) + mesh_pts.max(axis=0))
@@ -477,7 +491,7 @@ def render_orbit_compare(
     character = calibration.fbx_path.stem
     n = max(2, int(round(ORBIT_SECONDS * ORBIT_FPS)))
     out_path = out_dir / "before_after_360_compare.mp4"
-    writer = _StreamWriter(out_path, ORBIT_FPS, 2 * width, height)
+    writer = _StreamWriter(out_path, ORBIT_FPS, 2 * width, height, device=device)
     if verbose:
         print(f"  orbit dist {dist:.3f} m  {n} frames @ {ORBIT_FPS:g} fps"
               f"  elev {ORBIT_ELEVATION_DEG:g} deg")
@@ -487,7 +501,7 @@ def render_orbit_compare(
             cam = _orbit_camera(axes, target, dist, az, width, height)
             right = ground_backdrop(cam, ground, width, height, GRID_THEME)
             draw_shadow(right, cam, mesh_pts, ground, GRID_THEME)
-            draw_mesh(right, verts, faces, colors, cam, CHARACTER_AMBIENT)
+            draw_mesh(right, verts, faces, colors, cam, CHARACTER_AMBIENT, device=device)
             label_panel(right, character)
             writer.write(np.hstack([left, right]))
             if verbose and (k == 0 or (k + 1) % 30 == 0 or k == n - 1):
@@ -506,6 +520,7 @@ def render_run_videos(
     *,
     original_label: str = "Original Video",
     verbose: bool = True,
+    device: str = "cpu",
 ) -> dict[str, Path]:
     """Write the four result videos into `out_dir` (videos/ of a run)."""
     out_dir = Path(out_dir)
@@ -513,7 +528,7 @@ def render_run_videos(
     width, height = panel_size(source_video)
     fps = anim.fps
     cam, ground, backdrop_dark, backdrop_grid, faces, colors = _setup_view(
-        anim, asset, calibration, width, height
+        anim, asset, calibration, width, height, device=device
     )
     if verbose:
         print(f"  camera eye {np.round(cam.eye, 3)}  fov {cam.fov_deg:.1f} deg"
@@ -528,6 +543,7 @@ def render_run_videos(
             audio_src=source_video,
             audio_start_s=audio_start,
             audio_dur_s=audio_dur,
+            device=device,
         )
 
     writers = {
@@ -548,6 +564,7 @@ def render_run_videos(
                 cam=cam, ground=ground,
                 backdrop_dark=backdrop_dark, backdrop_grid=backdrop_grid,
                 faces=faces, colors=colors,
+                device=device,
             )
             writers["human_skeleton"].write(p_hum)
             writers["humanoid_skeleton"].write(p_mix)
@@ -564,3 +581,4 @@ def render_run_videos(
         for path in out.values():
             print(f"saved {path}")
     return out
+

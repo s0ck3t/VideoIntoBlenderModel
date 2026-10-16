@@ -4,13 +4,14 @@
 [![Assets: CC0 / Commercial-Permissive](https://img.shields.io/badge/Assets_%26_Weights-100%25_Commercial_Free-00b4d8.svg)](assets/LICENCES.md)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776ab.svg)](pyproject.toml)
 [![Blender: 4.2+ / 5.2 LTS](https://img.shields.io/badge/Blender-4.2%2B_%7C_5.2_LTS-ea7600.svg)](blender_extension/README.md)
+[![CUDA: Optional GPU Acceleration](https://img.shields.io/badge/NVIDIA_CUDA-Optional_All_Stages-76b900.svg)](#35-optional-nvidia-cuda-gpu-acceleration-across-all-pipeline-stages)
 [![glTF: 2.0 Binary](https://img.shields.io/badge/Export-glTF_2.0_(.glb)-8a2be2.svg)](#5-gltf-20-binary-export--uv-seam-splitting)
 
 ![VideoIntoBlenderModel Banner](docs/assets/repo_poster.png)
 
 **Transfer human motion from any monocular video — or recover a full 3D pose from a single still photograph — directly onto a skinned, textured 3D humanoid character (`.glb`) ready for Blender, Unity, Godot, and Unreal Engine.**
 
-`VideoIntoBlenderModel` (`v2bm`) is a lightweight, self-contained, **100% commercial-free** 3D character motion retargeting pipeline and **Blender 4.2+ / 5.2 LTS Extension**. Unlike traditional academic motion-capture pipelines that lock developers behind non-commercial research licences (such as SMPL, GVHMR, or WHAM), viral AGPL-3.0 detectors (YOLOv8), proprietary C++ SDKs, and multi-gigabyte checkpoint downloads, `v2bm` executes locally on CPU, CUDA, or Apple Silicon MPS using a **~9 MB Apache-2.0 pose landmarker**, a **sliding-window 2D-reprojection Inverse Kinematics (IK) trajectory optimiser**, and an **analytical swing-twist skeletal retargeter** with machine-precision forward kinematics ($\text{rest\_fk\_error} \le 10^{-12}$).
+`VideoIntoBlenderModel` (`v2bm`) is a lightweight, self-contained, **100% commercial-free** 3D character motion retargeting pipeline and **Blender 4.2+ / 5.2 LTS Extension**. Unlike traditional academic motion-capture pipelines that lock developers behind non-commercial research licences (such as SMPL, GVHMR, or WHAM), viral AGPL-3.0 detectors (YOLOv8), proprietary C++ SDKs, and multi-gigabyte checkpoint downloads, `v2bm` executes locally on CPU, **optional NVIDIA CUDA GPU across all pipeline stages**, or Apple Silicon MPS using a **~9 MB Apache-2.0 pose landmarker**, a **sliding-window 2D-reprojection Inverse Kinematics (IK) trajectory optimiser**, and an **analytical swing-twist skeletal retargeter** with machine-precision forward kinematics ($\text{rest\_fk\_error} \le 10^{-12}$).
 
 ---
 
@@ -33,6 +34,7 @@
    - [Biomechanical Stabilisation & Adaptive One-Euro ($1\text{€}$) Filtering](#32-biomechanical-stabilisation--adaptive-one-euro-1-filtering)
    - [Sliding-Window 2D-Reprojection Inverse Kinematics (IK) Optimiser](#33-sliding-window-2d-reprojection-inverse-kinematics-ik-optimiser)
    - [Analytical Swing-Twist Retargeting & Geodesic Quaternion Continuity](#34-analytical-swing-twist-retargeting--geodesic-quaternion-continuity)
+   - [Optional NVIDIA CUDA GPU Acceleration Across All Pipeline Stages](#35-optional-nvidia-cuda-gpu-acceleration-across-all-pipeline-stages)
 4. [Universal Humanoid Rig Compatibility & Bone Normalisation](#4-universal-humanoid-rig-compatibility--bone-normalisation)
 5. [glTF 2.0 Binary Export (`.glb`) & UV Seam Splitting](#5-gltf-20-binary-export-glb--uv-seam-splitting)
 6. [Installation & Quick Start](#6-installation--quick-start)
@@ -66,6 +68,7 @@ Most open-source video-to-3D human motion projects cannot legally be used in com
 | **Numerical Linear Algebra** | `numpy` (`>=1.26.0`) | NumPy Developers | `BSD-3-Clause` | **Permitted** | Free | None |
 | **Non-Linear IK & Hungarian Solver** | `scipy` (`>=1.11.0`) | SciPy Developers | `BSD-3-Clause` | **Permitted** | Free | None |
 | **Computer Vision & Inpainting** | `opencv-python` (`>=4.8.0`) | OpenCV Foundation / Intel | `Apache-2.0` | **Permitted** | Free | None |
+| **Optional NVIDIA CUDA Backend** | `cupy-cuda13x` / `cupy-cuda12x` (`[cuda]`) | Preferred Networks (`cupy.dev`) | `MIT` | **Permitted** | Free | None |
 | **Binary FBX Parser & Skinning** | `v2bm/rig/fbx_skeleton.py`, `skinned_mesh.py` | Pure Python (In-house Kaydara 7.4 parser) | `Apache-2.0` | **Permitted** | Free | None |
 | **Binary glTF 2.0 (`.glb`) Exporter** | `v2bm/rig/gltf.py` | Pure Python (In-house glTF 2.0 writer) | `Apache-2.0` | **Permitted** | Free | None |
 | **Default Studio Humanoid Rig** | `assets/rigs/humanoid_rig.fbx` | Procedural (`scripts/generate_humanoid_rig.py`) | `CC0-1.0` | **Permitted** | Free | None |
@@ -87,7 +90,8 @@ Most open-source video-to-3D human motion projects cannot legally be used in com
 | **Copyleft (AGPL-3.0) Contamination** | Present via Ultralytics YOLOv8 person tracking | **Zero AGPL / GPL Code** |
 | **Registration-Gated Body Models** | Requires manual sign-up for `SMPL_NEUTRAL.npz` | **None — Zero External Registration** |
 | **Model Download Footprint** | ~5.0 GB of PyTorch checkpoints | **~9 MB (`pose_landmarker_full.task`)** |
-| **PyTorch / C++ Build Isolation** | Fragile (`chumpy` / `pip` build-isolation failures) | **Pure `numpy`, `scipy`, `opencv-python`, `mediapipe`** |
+| **PyTorch / C++ Build Isolation** | Fragile (`chumpy` / `pip` build-isolation failures) | **Pure `numpy`, `scipy`, `opencv-python`, `mediapipe` (+ optional `cupy` MIT)** |
+| **GPU Acceleration Coverage** | Extraction only | **Optional NVIDIA CUDA across all 5 stages (CuPy + NVENC + Cycles GPU)** |
 | **Third-Party Rig Compatibility** | Hardcoded to single rig convention | **2-Stage Normalisation across 7+ Rig Standards** |
 | **Texture & UV Export in `.glb`** | Untextured grey meshes or broken UV seams | **1:1 Seam-Split `TEXCOORD_0` + Embedded PBR PNG/JPEG** |
 
@@ -308,6 +312,19 @@ Implemented across [`v2bm/rig/tpose_calibration.py`](v2bm/rig/tpose_calibration.
 - **Zero Twist Discontinuities (`twist_events = 0`)**: Resolves discrete $180^\circ$ axial twist ambiguities by selecting the twist branch minimising Frobenius rotation distance to the preceding frame (`pick_closest_aim_twist`).
 - **Geodesic $S^3$ Quaternion Continuity (`quat_sign_flips = 0`)**: Because unit quaternions $\mathbf{q}$ and $-\mathbf{q}$ represent the same 3D rotation in $\mathrm{SO}(3)$, naive frame-by-frame conversion can flip signs between adjacent keyframes, causing severe interpolation spikes in game engines. `continue_quaternion` enforces $\mathbf{q}_t \cdot \mathbf{q}_{t-1} \ge 0$ across every bone track.
 
+### 3.5. Optional NVIDIA CUDA GPU Acceleration Across All Pipeline Stages
+
+Implemented in [`v2bm/cuda_accel.py`](v2bm/cuda_accel.py), `v2bm` provides **optional end-to-end NVIDIA CUDA acceleration across all five stages** of the pipeline via **CuPy** (`cupy-cuda13x` / `cupy-cuda12x`, `MIT` licence) and **FFmpeg NVIDIA NVENC / NVDEC** hardware video codecs — while keeping zero PyTorch dependency and seamless automatic fallback to CPU whenever CUDA hardware or `cupy` is absent:
+
+| Pipeline Stage | Module(s) | NVIDIA CUDA GPU Acceleration (`--device cuda` or `--device auto`) |
+| :--- | :--- | :--- |
+| **Stage 1: Ingestion & Preflight** | `v2bm/checks.py`, `v2bm/cuda_accel.py` | Probes GPU compute capability, VRAM capacity, CuPy kernel execution, and FFmpeg `h264_nvenc` / `-hwaccel cuda` in `v2bm doctor` and `run.json`. |
+| **Stage 2: Multi-Performer Isolation** | `v2bm/isolate.py`, `v2bm/cuda_accel.py` | Vectorised GPU tracking cost matrix (`compute_tracking_cost_matrix_cuda`), GPU morphological silhouette dilation & target protection (`build_removal_mask_cuda` via `cupyx.scipy.ndimage.grey_dilation`), and `h264_nvenc` isolated video encoding. |
+| **Stage 3: 3D Extraction, Stabilisation & IK** | `v2bm/extract.py`, `v2bm/stabilize_kp2d.py`, `v2bm/ik_optimiser.py` | Batched GPU `Body24` coordinate transformation (`map_to_body24_batch_cuda`, `map_screen_to_body24_cuda`), vectorised GPU physiological hinge clamping (`clamp_anatomical_hinges_cuda`), and **parallel batched GPU non-linear least-squares IK trajectory optimisation** (`optimise_windows_cuda`) solving all sliding windows $(B, W, 24, 3)$ simultaneously on the GPU. |
+| **Stage 4: Retargeting & LBS Skinning** | `v2bm/rig/animation.py`, `v2bm/rig/skinned_mesh.py` | Vectorised GPU quaternion trajectory smoothing (`smooth_rotation_trajectories_cuda`) with $S^3$ hemisphere alignment and **batched multi-frame GPU Linear Blend Skinning** (`skin_frames_cuda`, `skin_mesh_cuda`) contracting $(F, B, 3, 4)$ bone palettes with $(V, B, 4)$ vertex weights via `cupy.einsum`. |
+| **Stage 5: `.glb` Export & Video Rendering** | `v2bm/rig/gltf.py`, `v2bm/rig/render.py`, `v2bm/videos.py` | GPU face/vertex normal computation (`vertex_normals_cuda`), GPU top-4 joint weight partitioning (`top4_weights_cuda`), GPU atomic vertex colour accumulation (`accumulate_vertex_colors_cuda`), GPU perspective triangle projection + back-face culling + radix depth sort + Lambertian shading (`project_and_shade_mesh_cuda`), and **FFmpeg `h264_nvenc` hardware video encoding** across all preview streams (`human_skeleton.mp4`, `humanoid_skeleton.mp4`, `humanoid_character.mp4`, `compare.mp4`, `before_after_360_compare.mp4`). |
+| **Studio Rendering (Blender)** | `scripts/render_blender_animation.py` | Automatically activates NVIDIA `OPTIX` / `CUDA` GPU rendering devices when running headless Blender Cycles renders (`--engine CYCLES --device cuda`). |
+
 ---
 
 ## 4. Universal Humanoid Rig Compatibility & Bone Normalisation
@@ -353,7 +370,7 @@ You do not need to manually rename bones in Blender before running `v2bm`. [`v2b
 ### Prerequisites
 
 - **Python**: `3.10+` (`3.10` to `3.13` supported; tested on Windows, macOS, and Linux).
-- **FFmpeg** *(recommended)*: Used to encode browser-compatible `H.264` (`yuv420p`) `.mp4` videos and preserve source audio tracks.
+- **FFmpeg** *(recommended)*: Used to encode browser-compatible `H.264` (`yuv420p`) `.mp4` videos (with automatic NVIDIA `h264_nvenc` hardware encoding when `--device cuda` is used) and preserve source audio tracks.
   - **Windows**: `winget install Gyan.FFmpeg` or `choco install ffmpeg`
   - **macOS**: `brew install ffmpeg`
   - **Ubuntu / Debian**: `sudo apt install ffmpeg`
@@ -370,6 +387,9 @@ python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -e .
+
+# Optional: Enable NVIDIA CUDA GPU acceleration across all pipeline stages (CuPy MIT)
+pip install -e ".[cuda]"
 ```
 
 **Windows (PowerShell):**
@@ -380,14 +400,19 @@ cd VideoIntoBlenderModel
 python -m venv venv
 .\venv\Scripts\python.exe -m pip install --upgrade pip
 .\venv\Scripts\python.exe -m pip install -e .
+
+# Optional: Enable NVIDIA CUDA GPU acceleration across all pipeline stages (CuPy MIT)
+.\venv\Scripts\python.exe -m pip install -e ".[cuda]"
 ```
+
+*(Note: `pip install -e ".[cuda]"` installs `cupy-cuda13x` for CUDA 13.x drivers; if your machine uses CUDA 12.x drivers, install `cupy-cuda12x` instead.)*
 
 > [!TIP]
 > On the first run, `v2bm` automatically verifies or downloads the lightweight Google MediaPipe Pose Landmarker weight file (`weights/mediapipe/pose_landmarker_full.task`, **~9 MB**, Apache-2.0 licence). No account registration or manual model download is required.
 
 ### 2. Verify Your Environment (`v2bm doctor`)
 
-Run the diagnostic check to verify all Python dependencies, bundled character rigs, input videos/images, MediaPipe weights, and FFmpeg availability:
+Run the diagnostic check to verify all Python dependencies, bundled character rigs, input videos/images, MediaPipe weights, FFmpeg availability, and optional NVIDIA CUDA capabilities:
 
 ```bash
 v2bm doctor
@@ -401,17 +426,17 @@ With no flags, `v2bm run` automatically selects the most recently added video in
 v2bm run
 ```
 
-Or specify any video and character rig explicitly:
+Or run with **NVIDIA CUDA GPU acceleration** across all pipeline stages (`--device cuda` or `--device auto`):
 
 ```bash
-# Retarget Kung Fu martial arts onto the Erika Archer elven rig:
-v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx
+# Run on NVIDIA CUDA GPU (CuPy + NVENC hardware video encoding):
+v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx --device cuda
 
-# Retarget Breakdance Kick-up onto the Kenney Skater Male rig:
-v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx
+# Retarget Kung Fu martial arts onto the Erika Archer elven rig:
+v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx --device cuda
 
 # Retarget Breakdance Six-Step onto the Kenney Retro Female rig:
-v2bm run --video assets/video/breakdancer_6step.mp4 --rig assets/rigs/kenney_female.fbx
+v2bm run --video assets/video/breakdancer_6step.mp4 --rig assets/rigs/kenney_female.fbx --device cuda
 ```
 
 ### 4. Reuse Extracted Motion on Another Character in Seconds (`--skeleton`)
@@ -421,7 +446,8 @@ Extracting and optimising 3D human motion from video is the most compute-intensi
 ```bash
 v2bm run \
   --skeleton outputs/20261015_205222_kung_fu_haikou/skeleton_motion.npz \
-  --rig assets/rigs/kenney_skater.fbx
+  --rig assets/rigs/kenney_skater.fbx \
+  --device cuda
 ```
 
 ---
@@ -433,7 +459,7 @@ The `v2bm` CLI (or `python -m v2bm.cli`) provides three subcommands: **`doctor`*
 ### 7.1. `v2bm doctor` — Environment & Asset Preflight
 
 ```bash
-v2bm doctor
+v2bm doctor [--device {cpu,cuda,mps,auto}]
 ```
 
 Inspects and validates:
@@ -442,6 +468,7 @@ Inspects and validates:
 - Python packages (`numpy`, `cv2`, `mediapipe`, `scipy`).
 - Local inference weights (`weights/mediapipe/pose_landmarker_full.task`).
 - `ffmpeg` availability on `PATH`.
+- **Optional NVIDIA CUDA status**: GPU model, VRAM capacity, CuPy version, FFmpeg `h264_nvenc` hardware encoder, and FFmpeg `cuda` hardware decoder.
 
 ### 7.2. `v2bm run` — Motion Extraction, Retargeting & Export
 
@@ -456,7 +483,7 @@ v2bm run [OPTIONS]
 | `--rig PATH` | `assets/rigs/humanoid_rig.fbx` | Target humanoid character `.fbx` file (FBX Binary format, T-pose). |
 | `--skeleton PATH` | `None` | Path to a previous run's `skeleton_motion.npz`. Skips video extraction and immediately retargets onto `--rig`. |
 | `--target-subject CHOICE` | `None` | Automatically isolates and tracks a specific performer in multi-person videos (`auto`, `primary`, `left`, `right`, `tallest`, `shortest`) and inpaints all other people before extraction. |
-| `--device {cpu,cuda,mps}` | `cpu` | Execution device for pose extraction (`cpu`, `cuda`, or `mps`). |
+| `--device {cpu,cuda,mps,auto}` | `cpu` | Execution device across all pipeline stages (`cpu`, `cuda`, `mps`, or `auto` to select `cuda` automatically when an NVIDIA GPU is detected). |
 | `--output-dir PATH` | Timestamped `outputs/<run>/` | Write outputs into a specific directory path instead of generating a timestamped folder. |
 | `--progress-jsonl PATH` | `None` | Append structured JSON Lines (`{"stage": ..., "progress": ..., "message": ...}`) progress events to `PATH` (used by automation and the Blender Extension). |
 | `--no-preview` | `False` | Skip rendering preview `.mp4` / `.png` files; still writes `character_animation.glb`, `.npz` archives, and `run.json`. |
@@ -469,7 +496,8 @@ Run standalone multi-person tracking and background inpainting to produce a clea
 v2bm isolate \
   --video path/to/multi_person_dance.mp4 \
   --output outputs/isolated_performer.mp4 \
-  --target-subject left
+  --target-subject left \
+  --device cuda
 ```
 
 | Flag / Option | Default | Description |
@@ -477,6 +505,7 @@ v2bm isolate \
 | `--video PATH` | *(Required)* | Path to input multi-person video file. |
 | `--output PATH` | *(Required)* | Destination path for the isolated, background-inpainted `.mp4` video. |
 | `--target-subject CHOICE` | `primary` | Performer selection policy on initial detection (`auto`, `primary`, `left`, `right`, `tallest`, `shortest`). |
+| `--device {cpu,cuda,mps,auto}` | `cpu` | Execution device (`cuda` or `auto` enables GPU cost matrix, GPU morphological mask dilation, and FFmpeg `h264_nvenc` encoding). |
 
 ---
 
@@ -486,7 +515,7 @@ Each run writes a self-contained directory under `outputs/<YYYYMMDD_HHMMSS>_<sou
 
 ```text
 outputs/20261015_205222_kung_fu_haikou/
-├── run.json                            # Full provenance report, timings, FPS, FK/skinning errors, & continuity metrics
+├── run.json                            # Full provenance report, timings, FPS, CUDA capabilities, FK/skinning errors, & continuity metrics
 ├── skeleton_motion.npz                 # 3D human skeleton trajectory: shape (F, 24, 3) in Y-up metres (reuse with --skeleton)
 ├── rig_rotations.npz                   # Per-bone quaternion rotations (wxyz) & root translations in cm
 ├── character_animation.glb             # Skinned, UV-textured glTF 2.0 character + keyframed animation clip
@@ -523,7 +552,7 @@ When running on a **still photograph (`--image`)**, `images/` is written instead
 
 `VideoIntoBlenderModel` includes a native **Blender 4.2+ / 5.2 LTS Extension** ([`blender_extension/v2bm_blender/`](blender_extension/v2bm_blender/)) that provides a complete sidebar panel inside the 3D Viewport (`N` key → **VideoIntoBlenderModel** tab).
 
-- **Zero Interpreter Pollution**: Blender's bundled Python never loads `mediapipe`, `opencv`, or `scipy`. Instead, the add-on spawns your external `venv` Python interpreter asynchronously, streams progress updates via `--progress-jsonl`, keeps the Blender UI responsive with a live progress bar and **Cancel** button, and automatically imports and frames the generated `character_animation.glb` upon completion.
+- **Zero Interpreter Pollution**: Blender's bundled Python never loads `mediapipe`, `opencv`, `scipy`, or `cupy`. Instead, the add-on spawns your external `venv` Python interpreter asynchronously (defaulting to `Auto (CUDA if available)` device selection), streams progress updates via `--progress-jsonl`, keeps the Blender UI responsive with a live progress bar and **Cancel** button, and automatically imports and frames the generated `character_animation.glb` upon completion.
 - **Build & Install the Extension**:
   ```bash
   python scripts/package_blender_extension.py
@@ -534,7 +563,7 @@ When running on a **still photograph (`--image`)**, `images/` is written instead
 
 ### 9.2. Headless Blender Studio Rendering
 
-To render high-definition studio-lit `.mp4` animations of any exported `character_animation.glb` (with three-point studio lighting, ground plane shadow catcher, automatic camera framing, and audio muxing), use [`scripts/render_blender_animation.py`](scripts/render_blender_animation.py):
+To render high-definition studio-lit `.mp4` animations of any exported `character_animation.glb` (with three-point studio lighting, ground plane shadow catcher, automatic camera framing, optional NVIDIA CUDA/OptiX Cycles GPU rendering, and audio muxing), use [`scripts/render_blender_animation.py`](scripts/render_blender_animation.py):
 
 **Linux / macOS:**
 
@@ -542,7 +571,8 @@ To render high-definition studio-lit `.mp4` animations of any exported `characte
 blender --background --python scripts/render_blender_animation.py -- \
   --glb outputs/20261015_205222_kung_fu_haikou/character_animation.glb \
   --output outputs/20261015_205222_kung_fu_haikou/videos/blender_character_render.mp4 \
-  --log outputs/20261015_205222_kung_fu_haikou/videos/blender_render.log
+  --log outputs/20261015_205222_kung_fu_haikou/videos/blender_render.log \
+  --device auto
 ```
 
 **Windows (PowerShell):**
@@ -552,7 +582,8 @@ Start-Process -FilePath "$env:LOCALAPPDATA\Microsoft\WindowsApps\blender-launche
   -ArgumentList "--background", "--python", "scripts\render_blender_animation.py", "--", `
     "--glb", "outputs\20261015_205222_kung_fu_haikou\character_animation.glb", `
     "--output", "outputs\20261015_205222_kung_fu_haikou\videos\blender_character_render.mp4", `
-    "--log", "outputs\20261015_205222_kung_fu_haikou\videos\blender_render.log" -Wait
+    "--log", "outputs\20261015_205222_kung_fu_haikou\videos\blender_render.log", `
+    "--device", "auto" -Wait
 ```
 
 ---
@@ -571,6 +602,7 @@ The repository includes a comprehensive four-tier automated test suite under [`t
 | [`tests/test_ik_optimiser.py`](tests/test_ik_optimiser.py) | **Tier 2 — Sliding-Window IK**: Verifies rigid bone length invariance ($< 10^{-4}\text{ m}$), anatomical hinge clamping, and foreshortening recovery. |
 | [`tests/test_glb_textures.py`](tests/test_glb_textures.py) | **Tier 2 — Binary `.glb` & UV Seam Splitting**: Verifies 1:1 vertex-UV seam splitting (`TEXCOORD_0`), binary `bufferViews`, embedded PNG/JPEG textures, and `baseColorTexture` materials. |
 | [`tests/test_isolate.py`](tests/test_isolate.py) | **Tier 2 — Multi-Performer Isolation**: Verifies Hungarian bipartite tracking across lateral swaps and depth crossings, plus target silhouette protection during inpainting. |
+| [`tests/test_cuda_accel.py`](tests/test_cuda_accel.py) | **Tier 2 & 3 — NVIDIA CUDA Acceleration Across All 5 Stages**: Verifies GPU capability detection, Stage 2 isolation GPU kernels, Stage 3 `Body24` mapping & batched GPU IK solver guarantees ($< 10^{-4}\text{ m}$ bone invariance, $\ge 50\%$ jerk reduction), Stage 4 quaternion smoothing & batched GPU linear blend skinning parity, Stage 5 `.glb` export, GPU painter shading, `h264_nvenc` streaming, and end-to-end CUDA pipeline execution. |
 | [`tests/test_checks.py`](tests/test_checks.py) & [`tests/test_cli.py`](tests/test_cli.py) | **Tier 3 — End-to-End CLI Execution**: Verifies preflight checks, `v2bm doctor`, `v2bm run --video`, and `v2bm run --image`. |
 | [`tests/test_blender_verification.py`](tests/test_blender_verification.py) | **Tier 4 — Headless Blender Audit**: Imports exported `.glb` files in headless Blender (`scripts/verify_blender_glb.py`) and verifies armature hierarchy, skinned modifiers, and keyframed F-curves. |
 
@@ -578,10 +610,10 @@ Run the full test suite:
 
 ```bash
 # Linux / macOS
-./venv/bin/pytest -v
+./venv/bin/python -m pytest -v
 
 # Windows PowerShell
-.\venv\Scripts\pytest.exe -v
+$env:PYTHONPATH="."; .\venv\Scripts\python.exe -m pytest -v
 ```
 
 ---
@@ -589,5 +621,5 @@ Run the full test suite:
 ## 11. Licence & Third-Party Notices
 
 - **Source Code**: Licensed under the **Apache License, Version 2.0** (see [`LICENSE`](LICENSE)).
-- **Third-Party Software Notices**: See [`NOTICE.md`](NOTICE.md) for attributions covering Google MediaPipe (`Apache-2.0`), OpenCV (`Apache-2.0`), NumPy (`BSD-3-Clause`), and SciPy (`BSD-3-Clause`).
+- **Third-Party Software Notices**: See [`NOTICE.md`](NOTICE.md) for attributions covering Google MediaPipe (`Apache-2.0`), OpenCV (`Apache-2.0`), NumPy (`BSD-3-Clause`), SciPy (`BSD-3-Clause`), and optional CuPy (`MIT`).
 - **Media & 3D Character Rig Register**: See [`assets/LICENCES.md`](assets/LICENCES.md) and [`assets/licences.json`](assets/licences.json) for full provenance and licence verification of all bundled videos and character rigs.

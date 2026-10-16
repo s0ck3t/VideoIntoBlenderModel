@@ -142,10 +142,14 @@ def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
 
 
 def _smooth_rotation_trajectories(
-    r_seq: list[dict[str, np.ndarray]], bone_names: list[str]
+    r_seq: list[dict[str, np.ndarray]], bone_names: list[str], device: str = "cpu"
 ) -> list[dict[str, np.ndarray]]:
     """Zero-phase geodesic quaternion filter to suppress high-frequency limb jitter."""
+    from ..cuda_accel import smooth_rotation_trajectories_cuda, use_cupy
     from .kinematics import continue_quaternion, quat_wxyz
+
+    if use_cupy(device):
+        return smooth_rotation_trajectories_cuda(r_seq, bone_names, UPPER_LIMB_BONES)
 
     n = len(r_seq)
     if n < 3:
@@ -219,7 +223,12 @@ def _smooth_rotation_trajectories(
 
 
 def build_animation(
-    motion, mapping: RigMapping, frames: list[int], *, verbose: bool = True
+    motion,
+    mapping: RigMapping,
+    frames: list[int],
+    *,
+    verbose: bool = True,
+    device: str = "cpu",
 ) -> RetargetedAnimation:
     """Retarget Human -> Humanoid, then carry the rest-relative motion onto the rig."""
     skel = mapping.skeleton_rig
@@ -253,7 +262,9 @@ def build_animation(
         if verbose and (i == 0 or (i + 1) % 200 == 0 or i == len(frames) - 1):
             print(f"  retarget {i + 1}/{len(frames)}")
 
-    smoothed_r_skeleton = _smooth_rotation_trajectories(raw_r_skeleton, list(mapping.controlled))
+    smoothed_r_skeleton = _smooth_rotation_trajectories(
+        raw_r_skeleton, list(mapping.controlled), device=device
+    )
 
     rest_skel_pos = world_positions_m(skel, forward_kinematics(skel, {}))
     rest_sole_skel_m = max(0.0, min(float(p[1]) for p in rest_skel_pos.values()))
@@ -328,29 +339,39 @@ def build_animation(
 
 
 def skin_frames(
-    asset: HumanoidRigAsset, anim: RetargetedAnimation, indices: list[int]
+    asset: HumanoidRigAsset,
+    anim: RetargetedAnimation,
+    indices: list[int],
+    device: str = "cpu",
 ) -> list[list[np.ndarray]]:
-    """Linear blend skinning of the character mesh (meters) for the given indices."""
-    out: list[list[np.ndarray]] = []
+    """Linear blend skinning of the character mesh (metres) for the given indices."""
+    from ..cuda_accel import skin_frames_cuda, use_cupy
+
     scale = asset.rig.meters_per_unit
+    if use_cupy(device) and len(indices) > 0 and len(asset.meshes) > 0:
+        return skin_frames_cuda(asset, anim, indices)
+
+    out: list[list[np.ndarray]] = []
     for i in indices:
         world = forward_kinematics(
             asset.rig, anim.r_anim_rig[i], hips_translation_cm=anim.hips_cm_rig[i]
         )
         out.append(
             [
-                skin_mesh(mesh, bone_palette(world, mesh, asset.rig.order)) * scale
+                skin_mesh(mesh, bone_palette(world, mesh, asset.rig.order), device=device) * scale
                 for mesh in asset.meshes
             ]
         )
     return out
 
 
-def pin_character_mesh_to_ground(asset: HumanoidRigAsset, anim: RetargetedAnimation) -> None:
+def pin_character_mesh_to_ground(
+    asset: HumanoidRigAsset, anim: RetargetedAnimation, device: str = "cpu"
+) -> None:
     """Align vertical hip translations so the skinned character mesh rests cleanly on Y = 0."""
     if not asset.meshes or anim.n == 0:
         return
-    skinned = skin_frames(asset, anim, list(range(anim.n)))
+    skinned = skin_frames(asset, anim, list(range(anim.n)), device=device)
     raw_delta_m = np.array(
         [-float(np.concatenate(v, axis=0)[:, 1].min()) for v in skinned],
         dtype=np.float64,
@@ -378,3 +399,4 @@ def core_bones_only(pos: dict[str, np.ndarray], edges) -> dict[str, np.ndarray]:
 
 def all_points(seq: list[dict[str, np.ndarray]]) -> np.ndarray:
     return np.stack([p for pos in seq for p in pos.values()])
+

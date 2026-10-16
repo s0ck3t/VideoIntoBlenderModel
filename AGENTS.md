@@ -9,6 +9,8 @@ CLI: `v2bm`.
 ```bash
 pip install --upgrade pip setuptools wheel \
   && pip install -e .
+# Optional NVIDIA CUDA GPU acceleration across all pipeline stages (CuPy MIT):
+pip install -e ".[cuda]"
 ```
 
 All bundled rigs, weights, and example assets are 100% permissive and free for commercial use (see `assets/LICENCES.md`):
@@ -26,12 +28,12 @@ Inference weights (`weights/mediapipe/pose_landmarker_full.task`, ~9 MB, Apache-
 ```bash
 v2bm doctor        # verify assets + dependencies; prints what is missing and where to get it
 v2bm run           # latest video in assets/video/ + assets/rigs/humanoid_rig.fbx
-v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx
-v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx
-v2bm run --image assets/image/urban_dancer_pose.png --rig assets/rigs/humanoid_rig.fbx
+v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/erika_archer.fbx --device cuda
+v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx --device cuda
+v2bm run --image assets/image/urban_dancer_pose.png --rig assets/rigs/humanoid_rig.fbx --device cuda
 v2bm run --skeleton outputs/<run>/skeleton_motion.npz --rig ...   # reuse extraction, swap rig
 v2bm run --video MULTI.mp4 --target-subject left --rig ...        # isolate performer in multi-person video
-v2bm isolate --video MULTI.mp4 --output ISOLATED.mp4 --target-subject left
+v2bm isolate --video MULTI.mp4 --output ISOLATED.mp4 --target-subject left --device cuda
 v2bm run --output-dir DIR --progress-jsonl FILE --no-preview      # Blender Extension / automation
 ```
 
@@ -86,11 +88,13 @@ Each run writes `outputs/<YYYYMMDD_HHMMSS>_<source>/`:
 ## Code map
 
 - `v2bm/paths.py` — all filesystem locations
+- `v2bm/cuda_accel.py` — optional NVIDIA CUDA GPU acceleration across all 5 pipeline stages (CuPy + FFmpeg NVENC/NVDEC)
 - `v2bm/extract.py` — video or still -> 3D human skeleton (MediaPipe Pose + IK optimiser)
 - `v2bm/rig/` — FBX parsing, FK, retargeting, skinning, rendering
 - `v2bm/pipeline.py` — one run end to end
-- `v2bm/cli.py` — `v2bm doctor` / `v2bm run`
+- `v2bm/cli.py` — `v2bm doctor` / `v2bm run` / `v2bm isolate`
 - `blender_extension/v2bm_blender/` — Blender 4.2+ Extension (UI + external process)
 - `blender_extension/README.md` — install and use the add-on
 - `docs/blender-extension.md` — maintainer smoke-test checklist
 - `scripts/package_blender_extension.py` — build `dist/v2bm-0.1.0.zip`
+

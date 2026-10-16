@@ -290,13 +290,23 @@ _add(
 )
 _add(
     "device_cuda_desc",
-    en="Run extraction on an NVIDIA GPU",
-    **{"zh-CN": "使用 NVIDIA GPU 提取动作"},
-    ko="NVIDIA GPU에서 추출",
-    ja="NVIDIA GPU で抽出",
-    de="Extraktion auf einer NVIDIA-GPU",
-    ru="Извлечение на GPU NVIDIA",
-    ar="الاستخراج على معالج NVIDIA",
+    en="Run pipeline with NVIDIA CUDA & NVENC acceleration",
+    **{"zh-CN": "使用 NVIDIA GPU (CUDA / NVENC) 加速流水线"},
+    ko="NVIDIA GPU (CUDA / NVENC)에서 실행",
+    ja="NVIDIA GPU (CUDA / NVENC) で実行",
+    de="Ausführung auf einer NVIDIA-GPU (CUDA / NVENC)",
+    ru="Выполнение на GPU NVIDIA (CUDA / NVENC)",
+    ar="التشغيل على معالج NVIDIA (CUDA / NVENC)",
+)
+_add(
+    "device_auto_desc",
+    en="Automatically use NVIDIA CUDA if available, otherwise CPU",
+    **{"zh-CN": "若可用则自动使用 NVIDIA CUDA，否则使用 CPU"},
+    ko="가능한 경우 자동으로 NVIDIA CUDA 사용, 아니면 CPU 사용",
+    ja="利用可能な場合は NVIDIA CUDA を自動使用、それ以外は CPU",
+    de="Automatisch NVIDIA CUDA verwenden, falls verfügbar, sonst CPU",
+    ru="Автоматически использовать NVIDIA CUDA при наличии, иначе CPU",
+    ar="استخدام NVIDIA CUDA تلقائيًا إن توفر، وإلا المعالج",
 )
 _add(
     "device_mps_desc",

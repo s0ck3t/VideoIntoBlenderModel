@@ -53,8 +53,8 @@ def build_run_argv(
     """Build `external-python -m v2bm.cli run ...` as a list."""
     if source_type not in {"video", "image"}:
         raise ValueError(f"source_type must be 'video' or 'image', got {source_type!r}")
-    if device not in {"cpu", "cuda", "mps"}:
-        raise ValueError(f"device must be cpu, cuda, or mps, got {device!r}")
+    if device not in {"cpu", "cuda", "mps", "auto"}:
+        raise ValueError(f"device must be cpu, cuda, mps, or auto, got {device!r}")
 
     cmd = [
         os.fspath(as_user_path(python)),

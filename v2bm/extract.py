@@ -217,8 +217,11 @@ def still_to_hold_video(
     *,
     n_frames: int = HOLD_FRAMES,
     fps: float = HOLD_FPS,
+    device: str = "cpu",
 ) -> Path:
     """Encode a still photo into a short static hold clip."""
+    from .cuda_accel import ffmpeg_video_encode_args, use_cuda
+
     image = Path(image)
     frame = cv2.imread(str(image), cv2.IMREAD_COLOR)
     if frame is None:
@@ -243,43 +246,39 @@ def still_to_hold_video(
 
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is not None:
-        cmd = [
-            ffmpeg,
-            "-y",
-            "-loglevel",
-            "error",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "bgr24",
-            "-s",
-            f"{w}x{h}",
-            "-r",
-            f"{fps:g}",
-            "-i",
-            "-",
-            "-frames:v",
-            str(n_frames),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-crf",
-            "18",
-            "-preset",
-            "veryfast",
-            "-movflags",
-            "+faststart",
-            str(out_mp4),
-        ]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-        assert proc.stdin is not None
-        for _ in range(n_frames):
-            proc.stdin.write(frame.tobytes())
-        proc.stdin.close()
-        if proc.wait() != 0:
-            raise RuntimeError(f"FFmpeg failed writing {out_mp4}")
-        return out_mp4
+        for enc_dev in ([device, "cpu"] if use_cuda(device) else ["cpu"]):
+            cmd = [
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "bgr24",
+                "-s",
+                f"{w}x{h}",
+                "-r",
+                f"{fps:g}",
+                "-i",
+                "-",
+                "-frames:v",
+                str(n_frames),
+                *ffmpeg_video_encode_args(enc_dev, crf=18, preset="veryfast"),
+                "-movflags",
+                "+faststart",
+                str(out_mp4),
+            ]
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+            assert proc.stdin is not None
+            try:
+                for _ in range(n_frames):
+                    proc.stdin.write(frame.tobytes())
+                proc.stdin.close()
+            except Exception:
+                pass
+            if proc.wait() == 0 and out_mp4.exists():
+                return out_mp4
 
     writer = cv2.VideoWriter(
         str(out_mp4), cv2.VideoWriter_fourcc(*"mp4v"), float(fps), (w, h)
@@ -293,11 +292,11 @@ def still_to_hold_video(
 
 
 @contextmanager
-def temp_hold_video(image: Path) -> Iterator[Path]:
+def temp_hold_video(image: Path, *, device: str = "cpu") -> Iterator[Path]:
     """Context manager writing a temporary hold video deleted upon exit."""
     tmp = Path(tempfile.mkdtemp(prefix="v2bm-hold-"))
     try:
-        yield still_to_hold_video(image, tmp / f"{Path(image).stem}.mp4")
+        yield still_to_hold_video(image, tmp / f"{Path(image).stem}.mp4", device=device)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -313,7 +312,13 @@ class MediaPipeExtractor:
     the exact 24 Body24 joint contract in metres.
     """
 
-    def __init__(self, model_path: Path | None = None, *, video_mode: bool = False) -> None:
+    def __init__(
+        self,
+        model_path: Path | None = None,
+        *,
+        video_mode: bool = False,
+        device: str = "cpu",
+    ) -> None:
         import mediapipe as mp
         from mediapipe.tasks.python import BaseOptions
         from mediapipe.tasks.python.vision import (
@@ -321,6 +326,7 @@ class MediaPipeExtractor:
             PoseLandmarkerOptions,
             RunningMode,
         )
+        from .cuda_accel import get_cuda_capabilities, resolve_device, use_cuda
 
         resolved_model = model_path or checks.ensure_mediapipe_model()
         if not resolved_model.exists():
@@ -329,19 +335,52 @@ class MediaPipeExtractor:
             )
 
         self.video_mode = video_mode
+        self.device = resolve_device(device)
         mode = RunningMode.VIDEO if video_mode else RunningMode.IMAGE
-        options = PoseLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=str(resolved_model)),
-            running_mode=mode,
-            num_poses=1,
-            min_pose_detection_confidence=0.5,
-            min_pose_presence_confidence=0.5,
-            min_tracking_confidence=0.5,
-            output_segmentation_masks=False,
-        )
-        self.landmarker = PoseLandmarker.create_from_options(options)
+        landmarker = None
+
+        if use_cuda(self.device) and get_cuda_capabilities().mediapipe_gpu_delegate:
+            try:
+                gpu_options = PoseLandmarkerOptions(
+                    base_options=BaseOptions(
+                        model_asset_path=str(resolved_model),
+                        delegate=BaseOptions.Delegate.GPU,
+                    ),
+                    running_mode=mode,
+                    num_poses=1,
+                    min_pose_detection_confidence=0.5,
+                    min_pose_presence_confidence=0.5,
+                    min_tracking_confidence=0.5,
+                    output_segmentation_masks=False,
+                )
+                landmarker = PoseLandmarker.create_from_options(gpu_options)
+            except Exception:
+                landmarker = None
+
+        if landmarker is None:
+            options = PoseLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=str(resolved_model)),
+                running_mode=mode,
+                num_poses=1,
+                min_pose_detection_confidence=0.5,
+                min_pose_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+                output_segmentation_masks=False,
+            )
+            landmarker = PoseLandmarker.create_from_options(options)
+
+        self.landmarker = landmarker
         self.mp_image_module = mp.Image
         self.mp_image_format = mp.ImageFormat
+
+    def close(self) -> None:
+        """Explicitly close the underlying MediaPipe PoseLandmarker task runner."""
+        if getattr(self, "landmarker", None) is not None:
+            try:
+                self.landmarker.close()
+            except Exception:
+                pass
+            self.landmarker = None
 
     @staticmethod
     def _unpack_result(result) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
@@ -514,7 +553,7 @@ def extract_motion(
         video: Path to input video or hold clip.
         output_npz: Destination path for skeleton_motion.npz.
         work_dir: Working cache directory.
-        device: Device flag ('cpu', 'cuda', 'mps' - MediaPipe runs on CPU).
+        device: Execution device ('cpu', 'cuda', 'mps', 'auto').
         static_camera: Flag indicating static camera perspective.
         verbose: Verbose logging output.
         source_image: Optional path if the run originated from a still photo.
@@ -522,38 +561,51 @@ def extract_motion(
     Returns:
         Path to the generated skeleton_motion.npz.
     """
+    from .cuda_accel import map_to_body24_batch_cuda, resolve_device, use_cupy
+
+    active_device = resolve_device(device)
     video = Path(video).resolve()
     is_still_source = source_image is not None or paths.is_image(video)
     actual_image = Path(source_image).resolve() if source_image is not None else (
         video if paths.is_image(video) else None
     )
 
-    extractor = MediaPipeExtractor()
+    extractor = MediaPipeExtractor(device=active_device)
 
     # --------------------------------------------------------------------------
     # Case A: Static Still Photo Extraction
     # --------------------------------------------------------------------------
     if is_still_source and actual_image is not None and actual_image.exists():
         if verbose:
-            print(f"extracting static 3D pose from still: {actual_image.name}")
+            print(
+                f"extracting static 3D pose from still: {actual_image.name} (device={active_device})"
+            )
 
         frame = cv2.imread(str(actual_image), cv2.IMREAD_COLOR)
         if frame is None:
             raise ValueError(f"Cannot decode image: {actual_image}")
 
         det = extractor.detect_frame(frame)
+        extractor.close()
         if det is None:
             raise RuntimeError(
                 f"MediaPipe failed to detect a human subject in image: {actual_image}"
             )
 
         w_coords, s_coords, vis = det
-        single_pose_body24 = extractor.map_to_body24(w_coords, vis)
+        if use_cupy(active_device):
+            single_pose_body24 = map_to_body24_batch_cuda(
+                w_coords[None, ...], vis[None, ...]
+            )[0]
+        else:
+            single_pose_body24 = extractor.map_to_body24(w_coords, vis)
 
         # Enforce anatomical hinge range-of-motion clamping on the static pose
         from .stabilize_kp2d import clamp_anatomical_hinges
 
-        single_pose_body24 = clamp_anatomical_hinges(single_pose_body24[None, ...])[0]
+        single_pose_body24 = clamp_anatomical_hinges(
+            single_pose_body24[None, ...], device=active_device
+        )[0]
 
         # Duplicate static pose across HOLD_FRAMES to form an animated hold clip
         n_frames = HOLD_FRAMES
@@ -564,7 +616,7 @@ def extract_motion(
 
         # Root translation with foot ground pinning to Y = 0
         root_translation, root_orientation = estimate_root_trajectory_and_pinning(
-            joints_3d, screen_lms, fps=fps
+            joints_3d, screen_lms, fps=fps, device=active_device
         )
         timestamps = np.arange(n_frames, dtype=np.float64) / float(fps)
 
@@ -576,7 +628,7 @@ def extract_motion(
             raise FileNotFoundError(f"Input video not found: {video}")
 
         if verbose:
-            print(f"extracting 3D motion from video: {video.name}")
+            print(f"extracting 3D motion from video: {video.name} (device={active_device})")
 
         cap = cv2.VideoCapture(str(video))
         if not cap.isOpened():
@@ -585,7 +637,7 @@ def extract_motion(
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         raw_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
 
-        video_extractor = MediaPipeExtractor(video_mode=True)
+        video_extractor = MediaPipeExtractor(video_mode=True, device=active_device)
         step_ms = max(1, int(round(1000.0 / (raw_fps if raw_fps > 1e-3 else 30.0))))
 
         world_list: list[np.ndarray | None] = []
@@ -613,6 +665,8 @@ def extract_motion(
             frame_idx += 1
 
         cap.release()
+        video_extractor.close()
+        extractor.close()
         n_frames = len(world_list)
         if n_frames == 0:
             raise RuntimeError(f"Video contains 0 decodable frames: {video}")
@@ -655,12 +709,17 @@ def extract_motion(
                         (1.0 - alpha) * vis_list[i0] + alpha * vis_list[i1]
                     ).astype(np.float32)
 
-        # Map to Body24 24 joints in human coordinates
-        raw_body24_joints = np.zeros((n_frames, 24, 3), dtype=np.float32)
-        screen_lms = np.zeros((n_frames, 33, 3), dtype=np.float32)
-        for i in range(n_frames):
-            raw_body24_joints[i] = extractor.map_to_body24(world_list[i], vis_list[i])
-            screen_lms[i] = screen_list[i]
+        world_lms = np.array(world_list, dtype=np.float32)
+        screen_lms = np.array(screen_list, dtype=np.float32)
+        vis_array = np.array(vis_list, dtype=np.float32)
+
+        # Map to Body24 24 joints in human coordinates (GPU batch or CPU)
+        if use_cupy(active_device):
+            raw_body24_joints = map_to_body24_batch_cuda(world_lms, vis_array)
+        else:
+            raw_body24_joints = np.zeros((n_frames, 24, 3), dtype=np.float32)
+            for i in range(n_frames):
+                raw_body24_joints[i] = extractor.map_to_body24(world_lms[i], vis_array[i])
 
         fps = playback_fps(video, n_frames, fallback=raw_fps or HOLD_FPS)
         timestamps = np.arange(n_frames, dtype=np.float64) / float(fps)
@@ -693,7 +752,9 @@ def extract_motion(
         #    - Rigid bone length hierarchical projection to temporal median rest lengths
         #    - Anatomical hinge range-of-motion clamping (knees & elbows)
         stabiliser = BiomechanicalStabiliser()
-        joints_3d, swap_flags = stabiliser.stabilise(filtered_joints, screen_lms)
+        joints_3d, swap_flags = stabiliser.stabilise(
+            filtered_joints, screen_lms, device=active_device
+        )
 
         if verbose and int(swap_flags.sum()) > 0:
             print(
@@ -704,19 +765,18 @@ def extract_motion(
         # 3. Sliding-window 2D-reprojection-constrained IK trajectory optimisation
         from .ik_optimiser import optimise_trajectory_windowed
 
-        world_lms = np.array(world_list, dtype=np.float32)
-        vis_array = np.array(vis_list, dtype=np.float32)
         joints_3d = optimise_trajectory_windowed(
             joints_3d,
             landmarks_2d=screen_lms,
             visibilities=vis_array,
             fps=fps,
+            device=active_device,
             verbose=verbose,
         )
 
         # 4. Camera-space root trajectory estimation & foot ground pinning to Y = 0
         root_translation, root_orientation = estimate_root_trajectory_and_pinning(
-            joints_3d, screen_lms, fps=fps
+            joints_3d, screen_lms, fps=fps, device=active_device
         )
 
     # --------------------------------------------------------------------------
@@ -733,6 +793,7 @@ def extract_motion(
         root_translation=root_translation.astype(np.float32),
         root_orientation=root_orientation.astype(np.float32),
         video=np.array(str(video)),
+        device=np.array(str(active_device)),
     )
     if screen_lms is not None:
         payload["screen_landmarks"] = screen_lms.astype(np.float32)

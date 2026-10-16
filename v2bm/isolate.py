@@ -146,7 +146,11 @@ class MultiPersonTracker:
         self._initialised = True
 
     def update(
-        self, detections: list[DetectedPose], frame_shape: tuple[int, int]
+        self,
+        detections: list[DetectedPose],
+        frame_shape: tuple[int, int],
+        *,
+        device: str = "cpu",
     ) -> dict[int, DetectedPose]:
         """Update tracks across frames using bipartite Hungarian assignment.
 
@@ -169,20 +173,39 @@ class MultiPersonTracker:
         n_tracks = len(self.tracks)
         n_dets = len(detections)
 
-        # Cost matrix: distance, height ratio difference, colour chromatic difference
-        cost_matrix = np.zeros((n_tracks, n_dets), dtype=np.float64)
+        from .cuda_accel import compute_tracking_cost_matrix_cuda, use_cupy
 
-        for i, trk in enumerate(self.tracks):
-            pred_centroid = trk.last_centroid + trk.velocity
-            for j, det in enumerate(detections):
-                d_spatial = np.linalg.norm(pred_centroid - det.centroid) / max(diag, 1.0)
-                max_h = max(trk.last_height, det.height, 1.0)
-                d_height = abs(trk.last_height - det.height) / max_h
-                d_colour = np.linalg.norm(trk.last_torso_colour - det.torso_colour) / 441.67  # sqrt(3*255^2)
+        if use_cupy(device) and n_tracks > 0 and n_dets > 0:
+            pred_centroids = np.stack([trk.last_centroid + trk.velocity for trk in self.tracks])
+            last_heights = np.array([trk.last_height for trk in self.tracks], dtype=np.float64)
+            last_colours = np.stack([trk.last_torso_colour for trk in self.tracks])
+            det_centroids = np.stack([det.centroid for det in detections])
+            det_heights = np.array([det.height for det in detections], dtype=np.float64)
+            det_colours = np.stack([det.torso_colour for det in detections])
+            cost_matrix = compute_tracking_cost_matrix_cuda(
+                pred_centroids,
+                last_heights,
+                last_colours,
+                det_centroids,
+                det_heights,
+                det_colours,
+                diag,
+            )
+        else:
+            # Cost matrix: distance, height ratio difference, colour chromatic difference
+            cost_matrix = np.zeros((n_tracks, n_dets), dtype=np.float64)
 
-                # Composite cost with high spatial and chromatic weight
-                cost = 0.50 * d_spatial + 0.30 * d_colour + 0.20 * d_height
-                cost_matrix[i, j] = cost
+            for i, trk in enumerate(self.tracks):
+                pred_centroid = trk.last_centroid + trk.velocity
+                for j, det in enumerate(detections):
+                    d_spatial = np.linalg.norm(pred_centroid - det.centroid) / max(diag, 1.0)
+                    max_h = max(trk.last_height, det.height, 1.0)
+                    d_height = abs(trk.last_height - det.height) / max_h
+                    d_colour = np.linalg.norm(trk.last_torso_colour - det.torso_colour) / 441.67
+
+                    # Composite cost with high spatial and chromatic weight
+                    cost = 0.50 * d_spatial + 0.30 * d_colour + 0.20 * d_height
+                    cost_matrix[i, j] = cost
 
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
@@ -308,8 +331,20 @@ def build_removal_mask(
     *,
     dilate_removal_px: int = 17,
     protect_target_px: int = 7,
+    device: str = "cpu",
 ) -> np.ndarray:
     """Build union removal mask for all non-target individuals with target protection."""
+    from .cuda_accel import build_removal_mask_cuda, use_cupy
+
+    if use_cupy(device) and matched_tracks:
+        return build_removal_mask_cuda(
+            frame_shape,
+            matched_tracks,
+            target_track_id,
+            dilate_removal_px=dilate_removal_px,
+            protect_target_px=protect_target_px,
+        )
+
     h, w = frame_shape[:2]
     union_removal = np.zeros((h, w), dtype=np.uint8)
     target_mask = np.zeros((h, w), dtype=np.uint8)
@@ -356,6 +391,7 @@ def isolate_video_subject(
     target: TargetSelector = "auto",
     target_point: tuple[float, float] | None = None,
     weights_path: Path | None = None,
+    device: str = "cpu",
     progress_callback: Callable[[int, int, float], None] | None = None,
     verbose: bool = True,
 ) -> Path:
@@ -367,12 +403,21 @@ def isolate_video_subject(
         target: Target selector ('left', 'right', 'tallest', 'shortest', 'primary', 'auto').
         target_point: Optional (x, y) seed point on frame 0 to choose target performer.
         weights_path: Optional path to MediaPipe pose landmarker model weights.
+        device: Execution device ('cpu', 'cuda', 'mps', 'auto').
         progress_callback: Optional progress reporter receiving (frame_idx, total_frames, fps).
         verbose: Verbose console logging flag.
 
     Returns:
         Path to output_video.
     """
+    from .cuda_accel import (
+        ffmpeg_video_encode_args,
+        get_cuda_capabilities,
+        resolve_device,
+        use_cuda,
+    )
+
+    active_device = resolve_device(device)
     input_video = Path(input_video).resolve()
     output_video = Path(output_video).resolve()
     output_video.parent.mkdir(parents=True, exist_ok=True)
@@ -394,7 +439,9 @@ def isolate_video_subject(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
     if verbose:
-        print(f"isolating performer (selector='{target}') from {input_video.name}")
+        print(
+            f"isolating performer (selector='{target}', device='{active_device}') from {input_video.name}"
+        )
         print(f"  resolution {w}x{h} @ {fps:.2f} fps ({total_frames} frames)")
 
     from mediapipe.tasks.python import BaseOptions
@@ -404,15 +451,34 @@ def isolate_video_subject(
         RunningMode,
     )
 
-    options = PoseLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=str(model_file)),
-        running_mode=RunningMode.IMAGE,
-        num_poses=4,
-        output_segmentation_masks=True,
-        min_pose_detection_confidence=0.25,
-        min_pose_presence_confidence=0.25,
-    )
-    landmarker = PoseLandmarker.create_from_options(options)
+    landmarker = None
+    if use_cuda(active_device) and get_cuda_capabilities().mediapipe_gpu_delegate:
+        try:
+            gpu_opts = PoseLandmarkerOptions(
+                base_options=BaseOptions(
+                    model_asset_path=str(model_file),
+                    delegate=BaseOptions.Delegate.GPU,
+                ),
+                running_mode=RunningMode.IMAGE,
+                num_poses=4,
+                output_segmentation_masks=True,
+                min_pose_detection_confidence=0.25,
+                min_pose_presence_confidence=0.25,
+            )
+            landmarker = PoseLandmarker.create_from_options(gpu_opts)
+        except Exception:
+            landmarker = None
+
+    if landmarker is None:
+        options = PoseLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(model_file)),
+            running_mode=RunningMode.IMAGE,
+            num_poses=4,
+            output_segmentation_masks=True,
+            min_pose_detection_confidence=0.25,
+            min_pose_presence_confidence=0.25,
+        )
+        landmarker = PoseLandmarker.create_from_options(options)
     import mediapipe as mp
 
     mp_image = mp.Image
@@ -442,9 +508,11 @@ def isolate_video_subject(
             res = landmarker.detect(img_obj)
 
             detections = extract_detected_poses(frame, res)
-            matched = tracker.update(detections, (h, w))
+            matched = tracker.update(detections, (h, w), device=active_device)
 
-            removal_mask = build_removal_mask((h, w), matched, tracker.target_track_id)
+            removal_mask = build_removal_mask(
+                (h, w), matched, tracker.target_track_id, device=active_device
+            )
 
             if np.sum(removal_mask) > 0:
                 clean_frame = cv2.inpaint(frame, removal_mask, 5, cv2.INPAINT_TELEA)
@@ -469,40 +537,34 @@ def isolate_video_subject(
         cap.release()
         writer.release()
 
-    # Audio Muxing via FFmpeg
+    # Audio Muxing via FFmpeg (prefers h264_nvenc when CUDA is enabled, falls back to libx264)
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is not None:
-        cmd = [
-            ffmpeg,
-            "-y",
-            "-i",
-            str(temp_raw),
-            "-i",
-            str(input_video),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-crf",
-            "18",
-            "-preset",
-            "fast",
-            "-c:a",
-            "aac",
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0?",
-            "-shortest",
-            str(output_video),
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True)
-        if res.returncode == 0 and output_video.exists():
-            if temp_raw.exists():
-                temp_raw.unlink()
-            if verbose:
-                print(f"saved isolated video: {output_video}")
-            return output_video
+        for enc_device in ([active_device, "cpu"] if use_cuda(active_device) else ["cpu"]):
+            cmd = [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(temp_raw),
+                "-i",
+                str(input_video),
+                *ffmpeg_video_encode_args(enc_device, crf=18, preset="fast"),
+                "-c:a",
+                "aac",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0?",
+                "-shortest",
+                str(output_video),
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0 and output_video.exists():
+                if temp_raw.exists():
+                    temp_raw.unlink()
+                if verbose:
+                    print(f"saved isolated video: {output_video}")
+                return output_video
 
     if temp_raw.exists():
         if output_video.exists():

@@ -289,15 +289,21 @@ def stabilise_limb_swaps_body24(
     return src.astype(np.float32), swapped
 
 
-def map_screen_to_body24(screen_landmarks: np.ndarray) -> np.ndarray:
+def map_screen_to_body24(screen_landmarks: np.ndarray, device: str = "cpu") -> np.ndarray:
     """Map MediaPipe 33 screen landmarks to 24 Body24 joint 2D screen positions.
 
     Args:
         screen_landmarks: Array of shape (F, 33, 2) or (F, 33, 3) or (33, 2)/(33, 3).
+        device: Compute device ('cpu', 'cuda', 'mps', 'auto').
 
     Returns:
         Array of shape (F, 24, 2) in normalised screen coordinates [0, 1].
     """
+    from .cuda_accel import map_screen_to_body24_cuda, use_cupy
+
+    if use_cupy(device):
+        return map_screen_to_body24_cuda(screen_landmarks)
+
     s = np.asarray(screen_landmarks, dtype=np.float64)
     squeeze = False
     if s.ndim == 2:
@@ -348,6 +354,7 @@ def project_rigid_bone_lengths(
     foreshorten_dist_2d: float = 0.035,
     singular_dist_3d: float = 0.05,
     bone_lengths: dict[tuple[int, int], float] | None = None,
+    device: str = "cpu",
 ) -> np.ndarray:
     """Project joints hierarchically to maintain invariant temporal median rest lengths.
 
@@ -366,6 +373,7 @@ def project_rigid_bone_lengths(
         foreshorten_dist_2d: 2D screen distance threshold below which foreshortening occurs.
         singular_dist_3d: 3D distance threshold in metres below which singularity occurs.
         bone_lengths: Optional explicit rest lengths dictionary for each bone pair.
+        device: Compute device ('cpu', 'cuda', 'mps', 'auto').
 
     Returns:
         Rigidly projected array of shape (F, 24, 3) in np.float32.
@@ -389,7 +397,7 @@ def project_rigid_bone_lengths(
     # 2. Extract 2D screen coordinates if provided
     s_body24: np.ndarray | None = None
     if screen_landmarks is not None and len(screen_landmarks) == n_frames:
-        s_body24 = map_screen_to_body24(screen_landmarks)
+        s_body24 = map_screen_to_body24(screen_landmarks, device=device)
 
     # 3. Hierarchically project child joint positions outward from root
     out = data.copy()
@@ -466,7 +474,7 @@ def project_rigid_bone_lengths(
     return out.astype(np.float32)
 
 
-def clamp_anatomical_hinges(joints_3d: np.ndarray) -> np.ndarray:
+def clamp_anatomical_hinges(joints_3d: np.ndarray, device: str = "cpu") -> np.ndarray:
     """Enforce physiological range-of-motion constraints on knees and elbows.
 
     Knees:
@@ -480,10 +488,16 @@ def clamp_anatomical_hinges(joints_3d: np.ndarray) -> np.ndarray:
 
     Args:
         joints_3d: Array of shape (F, 24, 3) in human coordinates (+Y up, -Z forward, +Z backward).
+        device: Compute device ('cpu', 'cuda', 'mps', 'auto').
 
     Returns:
         Clamped array of shape (F, 24, 3) in np.float32.
     """
+    from .cuda_accel import clamp_anatomical_hinges_cuda, use_cupy
+
+    if use_cupy(device):
+        return clamp_anatomical_hinges_cuda(joints_3d)
+
     data = np.asarray(joints_3d, dtype=np.float64).copy()
     n_frames = len(data)
 
@@ -594,12 +608,14 @@ class BiomechanicalStabiliser:
         self,
         joints_3d: np.ndarray,
         screen_landmarks: np.ndarray | None = None,
+        device: str = "cpu",
     ) -> tuple[np.ndarray, np.ndarray]:
         """Execute full biomechanical stabilisation on a 3D joint sequence.
 
         Args:
             joints_3d: Raw extracted joints of shape (F, 24, 3).
             screen_landmarks: Optional screen coordinates of shape (F, 33, 3).
+            device: Compute device ('cpu', 'cuda', 'mps', 'auto').
 
         Returns:
             tuple of (stabilised_joints of shape (F, 24, 3), swap_flags of shape (F,)).
@@ -609,11 +625,11 @@ class BiomechanicalStabiliser:
 
         # Stage 2: Foreshortening-aware rigid bone length projection
         rigid_joints = project_rigid_bone_lengths(
-            swapped_joints, self.bone_pairs, screen_landmarks=screen_landmarks
+            swapped_joints, self.bone_pairs, screen_landmarks=screen_landmarks, device=device
         )
 
         # Stage 3: Anatomical hinge clamping
-        clamped_joints = clamp_anatomical_hinges(rigid_joints)
+        clamped_joints = clamp_anatomical_hinges(rigid_joints, device=device)
 
         return clamped_joints, swap_flags
 
@@ -627,6 +643,7 @@ def estimate_root_trajectory_and_pinning(
     screen_landmarks: np.ndarray | None = None,
     fps: float = 30.0,
     stance_velocity_threshold: float = 0.15,
+    device: str = "cpu",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Estimate camera-space root translation and enforce foot ground pinning at Y = 0.
 
@@ -644,6 +661,7 @@ def estimate_root_trajectory_and_pinning(
         screen_landmarks: Optional 2D screen landmarks of shape (F, 33, 3).
         fps: Sampling rate in frames per second.
         stance_velocity_threshold: Velocity threshold in m/s below which a foot is planted.
+        device: Compute device ('cpu', 'cuda', 'mps', 'auto').
 
     Returns:
         tuple of (root_translation of shape (F, 3), root_orientation of shape (F, 3)).

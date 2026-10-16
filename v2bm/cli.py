@@ -120,11 +120,19 @@ def doctor() -> int:
     )
 
     import shutil as _shutil
+    from .cuda_accel import get_cuda_capabilities
 
     _check(
         "ffmpeg (optional)  H.264 output with the source video's audio",
         _shutil.which("ffmpeg") is not None,
         "install ffmpeg - runs fine without, but videos are silent mp4v",
+    )
+
+    cuda_caps = get_cuda_capabilities()
+    _check(
+        f"NVIDIA CUDA (opt)  {cuda_caps.summary()}",
+        cuda_caps.any_cuda_available,
+        "install cupy-cuda13x / cupy-cuda12x (`pip install -e .[cuda]`) and NVIDIA drivers for GPU acceleration",
     )
 
     weights_note = (
@@ -133,7 +141,7 @@ def doctor() -> int:
     print(f"\ninference weights: {weights_note}")
 
     if ok and deps_ok:
-        print("\neverything in place - try: v2bm run")
+        print("\neverything in place - try: v2bm run  (or: v2bm run --device cuda)")
         return 0
     print("\nfix the [missing] items above, then re-run: v2bm doctor")
     return 1
@@ -164,6 +172,8 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
     image: Path | None = None
     want_image = getattr(args, "image", None) is not None
     want_video = bool(getattr(args, "video", None))
+    device = getattr(args, "device", "cpu") or "cpu"
+    image_checker = lambda p: checks.check_image(p, device=device)
 
     if want_image and want_video:
         check(
@@ -189,11 +199,11 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
                 False,
                 "use a still (.jpg/.png/webp/bmp), or pass a clip with --video",
             )
-        check_content(f"image is usable    {image.name if image else ''}", image, checks.check_image)
+        check_content(f"image is usable    {image.name if image else ''}", image, image_checker)
     video_checker = (
-        (lambda p: checks.check_video(p, allow_multi=True))
+        (lambda p: checks.check_video(p, allow_multi=True, device=device))
         if getattr(args, "target_subject", None)
-        else checks.check_video
+        else (lambda p: checks.check_video(p, device=device))
     )
 
     if want_video:
@@ -202,11 +212,11 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
             image = video
             video = None
             print(f"{OK} input image        {image}  (detected from --video path)")
-            check_content(f"image is usable    {image.name}", image, checks.check_image)
+            check_content(f"image is usable    {image.name}", image, image_checker)
         else:
             check(f"input video        {video}", video.exists(), "check the --video path")
             check_content(f"video is usable    {video.name}", video, video_checker)
-    else:
+    elif not want_image:
         video = paths.latest_video()
         if video is None:
             image = paths.latest_image()
@@ -217,7 +227,7 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
                 SOURCE_HINT + ", or pass --video / --image",
             )
             check_content(
-                f"image is usable    {image.name if image else ''}", image, checks.check_image
+                f"image is usable    {image.name if image else ''}", image, image_checker
             )
         else:
             check(
@@ -367,8 +377,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--device",
         default="cpu",
-        choices=["cpu", "cuda", "mps"],
-        help="inference device for the extraction step (default: cpu)",
+        choices=["cpu", "cuda", "mps", "auto"],
+        help="execution device across all pipeline stages: cpu, cuda (NVIDIA CuPy + NVENC), mps, or auto (default: cpu)",
     )
     p_run.add_argument(
         "--output-dir",
@@ -396,6 +406,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "primary", "left", "right", "tallest", "shortest"],
         help="performer selection criterion (default: primary)",
     )
+    p_iso.add_argument(
+        "--device",
+        default="cpu",
+        choices=["cpu", "cuda", "mps", "auto"],
+        help="execution device for isolation, mask dilation, and NVENC video encoding (default: cpu)",
+    )
 
     return parser
 
@@ -412,6 +428,7 @@ def main() -> None:
             Path(args.video),
             Path(args.output),
             target=args.target_subject,
+            device=args.device,
         )
         sys.exit(0)
     sys.exit(run(args))

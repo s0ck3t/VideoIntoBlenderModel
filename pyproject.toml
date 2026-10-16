@@ -11,6 +11,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cuda = [
+    "cupy-cuda13x>=13.0.0",
+]
 dev = [
     "pytest>=8.0.0",
 ]
