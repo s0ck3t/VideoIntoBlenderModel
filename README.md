@@ -12,7 +12,7 @@
 
 **Transfer human motion from any monocular video — or recover a full 3D pose from a single still photograph — directly onto a skinned, textured 3D humanoid character (`.glb`) ready for Blender, Unity, Godot, and Unreal Engine.**
 
-`VideoIntoBlenderModel` (`v2bm`) is a lightweight, self-contained, **100% commercial-free** 3D character motion retargeting pipeline and **Blender 4.2+ / 5.2 LTS Extension**. Unlike traditional academic motion-capture pipelines that lock developers behind non-commercial research licences (such as SMPL, GVHMR, or WHAM), viral AGPL-3.0 detectors (YOLOv8), proprietary C++ SDKs, and multi-gigabyte checkpoint downloads, `v2bm` executes locally on CPU, **optional NVIDIA CUDA GPU across all pipeline stages**, or Apple Silicon MPS using a **~9 MB Apache-2.0 pose landmarker**, a **sliding-window 2D-reprojection Inverse Kinematics (IK) trajectory optimiser**, and an **analytical swing-twist skeletal retargeter** with machine-precision forward kinematics ($\text{rest\_fk\_error} \le 10^{-12}$).
+`VideoIntoBlenderModel` (`v2bm`) is a lightweight, self-contained, **100% commercial-free** 3D character motion retargeting pipeline and **Blender 4.2+ / 5.2 LTS Extension**. Unlike traditional academic motion-capture pipelines that lock developers behind non-commercial research licences (such as SMPL, GVHMR, or WHAM), viral AGPL-3.0 detectors (YOLOv8), proprietary C++ SDKs, and multi-gigabyte checkpoint downloads, `v2bm` executes locally on CPU, **optional NVIDIA CUDA GPU across all pipeline stages**, or Apple Silicon MPS using a **~9 MB Apache-2.0 pose landmarker**, a **sliding-window 2D-reprojection Inverse Kinematics (IK) trajectory optimiser**, and an **analytical swing-twist skeletal retargeter** with machine-precision forward kinematics (`rest_fk_error` $\le 10^{-12}$).
 
 ---
 
@@ -32,7 +32,7 @@
 3. [System Architecture & Core Functionality](#3-system-architecture--core-functionality)
    - [End-to-End Pipeline Architecture](#end-to-end-pipeline-architecture)
    - [Multi-Person Tracking, Silhouette Protection & Background Inpainting](#31-multi-person-tracking-silhouette-protection--background-inpainting)
-   - [Biomechanical Stabilisation & Adaptive One-Euro ($1\text{€}$) Filtering](#32-biomechanical-stabilisation--adaptive-one-euro-1-filtering)
+   - [Biomechanical Stabilisation & Adaptive One-Euro (1€) Filtering](#32-biomechanical-stabilisation--adaptive-one-euro-1-filtering)
    - [Sliding-Window 2D-Reprojection Inverse Kinematics (IK) Optimiser](#33-sliding-window-2d-reprojection-inverse-kinematics-ik-optimiser)
    - [Analytical Swing-Twist Retargeting & Geodesic Quaternion Continuity](#34-analytical-swing-twist-retargeting--geodesic-quaternion-continuity)
    - [Optional NVIDIA CUDA GPU Acceleration Across All Pipeline Stages](#35-optional-nvidia-cuda-gpu-acceleration-across-all-pipeline-stages)
@@ -150,7 +150,7 @@ v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_sk
 | :--- | :--- |
 | **Input Video** | `assets/video/breakdancer_kickup.mp4` (`1920×1080` @ `24.0 fps`, `67 frames`, `CC-BY-3.0` by VincaniTV) |
 | **Target Character Rig** | `assets/rigs/kenney_skater.fbx` (`25 bones`, `804 vertices`, `1,604 triangles`, `CC0-1.0` by Kenney.nl) |
-| **Rest FK / Skinning Error** | $\text{rest\_fk\_error} = 1.73 \times 10^{-12}$ · $\text{rest\_skin\_error} = 1.03 \times 10^{-5}\text{ cm}$ |
+| **Rest FK / Skinning Error** | `rest_fk_error` $= 1.73 \times 10^{-12}$ · `rest_skin_error` $= 1.03 \times 10^{-5}\text{ cm}$ |
 | **Temporal Continuity** | `0` discrete $180^\circ$ twist jumps · `0` antipodal quaternion sign flips |
 
 ---
@@ -169,7 +169,7 @@ v2bm run --video assets/video/breakdancer_6step.mp4 --rig assets/rigs/kenney_fem
 | :--- | :--- |
 | **Input Video** | `assets/video/breakdancer_6step.mp4` (`640×360` @ `30.0 fps`, `120 frames`, `CC-BY-3.0` by Neil Sweeney) |
 | **Target Character Rig** | `assets/rigs/kenney_female.fbx` (`25 bones`, `804 vertices`, `1,604 triangles`, `CC0-1.0` by Kenney.nl) |
-| **Rest FK / Skinning Error** | $\text{rest\_fk\_error} = 1.73 \times 10^{-12}$ · $\text{rest\_skin\_error} = 1.03 \times 10^{-5}\text{ cm}$ |
+| **Rest FK / Skinning Error** | `rest_fk_error` $= 1.73 \times 10^{-12}$ · `rest_skin_error` $= 1.03 \times 10^{-5}\text{ cm}$ |
 | **Temporal Continuity** | `0` discrete $180^\circ$ twist jumps · `0` antipodal quaternion sign flips |
 
 ---
@@ -188,7 +188,7 @@ v2bm run --video assets/video/urban_dancer_51314.mp4 --rig assets/rigs/humanoid_
 | :--- | :--- |
 | **Input Video** | `assets/video/urban_dancer_51314.mp4` (`23.98 fps`, `240 frames`, `Royalty-Free Commercial`) |
 | **Target Character Rig** | `assets/rigs/humanoid_rig.fbx` (`25 bones`, dual meshes `Alpha_Surface` + `Alpha_Joints`, `CC0-1.0`) |
-| **Rest FK / Skinning Error** | $\text{rest\_fk\_error} = 0.0$ · $\text{rest\_skin\_error} = 3.18 \times 10^{-14}\text{ cm}$ |
+| **Rest FK / Skinning Error** | `rest_fk_error` $= 0.0$ · `rest_skin_error` $= 3.18 \times 10^{-14}\text{ cm}$ |
 | **Temporal Continuity** | `0` discrete $180^\circ$ twist jumps · `0` antipodal quaternion sign flips |
 
 <details>
@@ -218,7 +218,7 @@ v2bm run --video assets/video/street_dancer_51310.mp4 --rig assets/rigs/humanoid
 | :--- | :--- |
 | **Input Video** | `assets/video/street_dancer_51310.mp4` (`23.98 fps`, `240 frames`, `Royalty-Free Commercial`) |
 | **Target Character Rig** | `assets/rigs/humanoid_rig.fbx` (`25 bones`, `CC0-1.0` Public Domain) |
-| **Rest FK / Skinning Error** | $\text{rest\_fk\_error} = 0.0$ · $\text{rest\_skin\_error} = 3.18 \times 10^{-14}\text{ cm}$ |
+| **Rest FK / Skinning Error** | `rest_fk_error` $= 0.0$ · `rest_skin_error` $= 3.18 \times 10^{-14}\text{ cm}$ |
 | **Temporal Continuity** | `0` discrete $180^\circ$ twist jumps · `0` antipodal quaternion sign flips |
 
 ---
@@ -286,13 +286,13 @@ Real-world dance and action videos frequently contain background spectators, duo
 - **Dynamic Silhouette Protection (`build_removal_mask`)**: Dilates non-target segmentation masks (`17 px` elliptical structuring element) to erase stray hair and fingertips, then **strictly subtracts the dilated target performer mask (`7 px` protection buffer)** so inpainting never clips the target performer's limbs during close interaction.
 - **Fast Marching Telea Inpainting & Audio Muxing**: Reconstructs occluded background pixels via `cv2.INPAINT_TELEA` and multiplexes the original audio stream into the isolated video via `ffmpeg`.
 
-### 3.2. Biomechanical Stabilisation & Adaptive One-Euro ($1\text{€}$) Filtering
+### 3.2. Biomechanical Stabilisation & Adaptive One-Euro (1€) Filtering
 
 Raw monocular 3D landmarks suffer from depth ($Z$) jitter, perspective foreshortening, and occasional left/right limb confusion during fast spins. [`v2bm/stabilize_kp2d.py`](v2bm/stabilize_kp2d.py) applies a five-stage biomechanical filter bank:
 
-1. **Axis-Specialised Adaptive One-Euro ($1\text{€}$) Filter**: Modulates the low-pass cutoff frequency dynamically with landmark speed ($f_c = f_{c,\min} + \beta \|\hat{\dot{\mathbf{x}}}_t\|$). Lateral/vertical ($X, Y$) coordinates use high responsiveness ($f_{c,\min} = 1.0\text{ Hz}, \beta = 0.005$), while monocular depth ($Z$) applies stronger noise suppression ($f_{c,\min} = 0.5\text{ Hz}, \beta = 0.05$), achieving $\ge 60\%$ reduction in Mean Squared Jerk (MSJ).
+1. **Axis-Specialised Adaptive One-Euro (1€) Filter**: Modulates the low-pass cutoff frequency dynamically with landmark speed ($f_c = f_{c,\min} + \beta \|\hat{\dot{\mathbf{x}}}_t\|$). Lateral/vertical ($X, Y$) coordinates use high responsiveness ($f_{c,\min} = 1.0\text{ Hz}, \beta = 0.005$), while monocular depth ($Z$) applies stronger noise suppression ($f_{c,\min} = 0.5\text{ Hz}, \beta = 0.05$), achieving $\ge 60\%$ reduction in Mean Squared Jerk (MSJ).
 2. **Bilateral Limb Swap Guard**: Monitors shoulder and hip lateral vector orientation with temporal hysteresis to prevent instantaneous left/right limb swaps during $180^\circ$ turns.
-3. **Anatomical Hinge Range-of-Motion Clamping**: Constrains knees and elbows to physiological flexion intervals ($0^\circ\text{–}145^\circ$) and prevents hyper-extension inversion.
+3. **Anatomical Hinge Range-of-Motion Clamping**: Constrains knees and elbows to physiological flexion intervals ($0^\circ$–$145^\circ$) and prevents hyper-extension inversion.
 4. **Camera-Space Root Trajectory Estimation**: Estimates metric 3D root displacement from apparent torso scale relative to temporal median anatomical bone lengths.
 5. **Stance-Phase Ground Pinning**: Detects stationary support feet and pins the character's lowest contact point to the ground plane ($Y = 0$) to prevent vertical floating and floor penetration.
 
@@ -598,8 +598,8 @@ The repository includes a comprehensive four-tier automated test suite under [`t
 | :--- | :--- |
 | [`tests/test_licence_and_deps.py`](tests/test_licence_and_deps.py) | **Tier 1 — Licence & Dependency Gate**: Verifies `pyproject.toml`, AST imports across `v2bm/`, absence of non-commercial assets, and completeness of `assets/licences.json`. |
 | [`tests/test_fbx_aliases.py`](tests/test_fbx_aliases.py) | **Tier 1 — Universal Bone Normalisation**: Verifies two-stage prefix stripping and alias canonicalisation across Mixamo, Kenney, Quaternius, MakeHuman, VRM, Unreal, and 3ds Max Biped naming schemes. |
-| [`tests/test_fk_skin.py`](tests/test_fk_skin.py) | **Tier 2 — Kinematics & Skinning Precision**: Proves machine-precision rest forward kinematics ($\text{rest\_fk\_error} \le 10^{-12}$) and sub-micrometre linear blend skinning ($\text{rest\_skin\_error} < 10^{-3}\text{ cm}$). |
-| [`tests/test_retarget_stability.py`](tests/test_retarget_stability.py) | **Tier 2 — Retargeting Stability**: Proves zero discrete $180^\circ$ twist jumps ($\text{twist\_events} = 0$) and zero antipodal quaternion sign flips ($\text{quat\_sign\_flips} = 0$). |
+| [`tests/test_fk_skin.py`](tests/test_fk_skin.py) | **Tier 2 — Kinematics & Skinning Precision**: Proves machine-precision rest forward kinematics (`rest_fk_error` $\le 10^{-12}$) and sub-micrometre linear blend skinning (`rest_skin_error` $< 10^{-3}\text{ cm}$). |
+| [`tests/test_retarget_stability.py`](tests/test_retarget_stability.py) | **Tier 2 — Retargeting Stability**: Proves zero discrete $180^\circ$ twist jumps (`twist_events = 0`) and zero antipodal quaternion sign flips (`quat_sign_flips = 0`). |
 | [`tests/test_one_euro_filter.py`](tests/test_one_euro_filter.py) | **Tier 2 — Adaptive Filtering**: Verifies $\ge 60\%$ Mean Squared Jerk (MSJ) acceleration noise reduction. |
 | [`tests/test_ik_optimiser.py`](tests/test_ik_optimiser.py) | **Tier 2 — Sliding-Window IK**: Verifies rigid bone length invariance ($< 10^{-4}\text{ m}$), anatomical hinge clamping, and foreshortening recovery. |
 | [`tests/test_glb_textures.py`](tests/test_glb_textures.py) | **Tier 2 — Binary `.glb` & UV Seam Splitting**: Verifies 1:1 vertex-UV seam splitting (`TEXCOORD_0`), binary `bufferViews`, embedded PNG/JPEG textures, and `baseColorTexture` materials. |

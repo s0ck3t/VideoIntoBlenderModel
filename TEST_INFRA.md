@@ -6,7 +6,7 @@ This document establishes the authoritative testing architecture, mathematical v
 
 The test infrastructure enforces strict quality gates across four sequential tiers:
 - **Tier 1: Algorithmic & Licence Guarantees** — Verifies 100% permissive licensing (Apache-2.0, MIT, BSD, CC0) and total absence of copyleft (AGPL) or non-commercial research models (MPI Body-Model, legacy-lifter, third-party-detector YOLOv8, and legacy legacy_mesh_serializer).
-- **Tier 2: Mathematical Verification** — Mathematical proofs of machine-precision forward kinematics ($\text{rest\_fk\_error} \le 10^{-12}$), sub-millimetre linear blend skinning ($\text{rest\_skin\_error} < 10^{-3}\text{ cm}$), retargeting continuity ($\text{twist\_events} = 0$, $\text{quat\_sign\_flips} = 0$), and adaptive One-Euro ($1€$) filter acceleration noise / jerk reduction ($\ge 60\%$).
+- **Tier 2: Mathematical Verification** — Mathematical proofs of machine-precision forward kinematics (`rest_fk_error` $\le 10^{-12}$), sub-millimetre linear blend skinning (`rest_skin_error` $< 10^{-3}\text{ cm}$), retargeting continuity (`twist_events = 0`, `quat_sign_flips = 0`), and adaptive One-Euro (1€) filter acceleration noise / jerk reduction ($\ge 60\%$).
 - **Tier 3: End-to-End CLI Verification** — Opaque-box execution testing for `v2bm doctor`, `v2bm run --video`, and `v2bm run --image`.
 - **Tier 4: Headless Blender 5.2.2 LTS Verification** — Headless automated 3D scene audit and rendering harness verifying armature hierarchy, skinned meshes, keyframed actions, and visual fidelity.
 
@@ -62,8 +62,7 @@ All runtime and build dependencies declared in `pyproject.toml` must belong to t
 `{numpy, opencv-python, mediapipe, scipy, pytest, einops, setuptools}` (Apache-2.0, MIT, BSD).
 
 #### Source Tree AST Inspection
-An abstract syntax tree (AST) traversal over all Python files under `v2bm/` asserts that:
-$$\forall f \in \text{SourceFiles}, \forall \text{node} \in \operatorname{AST}(f), \quad \operatorname{Root}(\text{node}) \notin \{\text{bodymodel}, \text{legacy_lifter}, \text{third_party_detector}, \text{legacy_mesh_serializer}\}$$
+An abstract syntax tree (AST) traversal over all Python files under `v2bm/` asserts that for every file $f \in \text{SourceFiles}$ and every import $\text{node} \in \operatorname{AST}(f)$, the root package name is strictly disjoint from `{bodymodel, legacy_lifter, third_party_detector, legacy_mesh_serializer}`.
 
 ---
 
@@ -76,9 +75,9 @@ At rest pose, $\mathbf{R}_{\text{anim}, i} = \mathbf{I}_{3\times3}$. When edit b
 
 Thus, forward kinematics simplifies to:
 $$\mathbf{M}_i = \mathbf{M}_{p(i)} \cdot \mathbf{T}_i = \mathbf{M}_{i, \text{rest}}$$
-The rest FK error metric is defined as:
-$$\text{rest\_fk\_error} = \max_{i \in \text{Bones}} \|\mathbf{M}_{i, \text{FK}}(\mathbf{I}) - \mathbf{M}_{i, \text{rest}}\|_F$$
-**Authoritative Bound**: $\text{rest\_fk\_error} \le 10^{-12}$ (machine floating-point precision).
+The rest FK error metric (`rest_fk_error`) is defined as:
+$$\epsilon_{\text{FK,rest}} = \max_{i \in \text{Bones}} \|\mathbf{M}_{i, \text{FK}}(\mathbf{I}) - \mathbf{M}_{i, \text{rest}}\|_F$$
+**Authoritative Bound**: `rest_fk_error` $\le 10^{-12}$ (machine floating-point precision).
 
 #### 3.2.2. Linear Blend Skinning Rest Error (`tests/test_fk_skin.py`)
 Linear blend skinning (LBS) maps bind-pose vertex coordinates $\mathbf{v} \in \mathbb{R}^3$ to posed space $\mathbf{v}'$ via inverse bind matrices (IBM) $\mathbf{B}_j = \mathbf{M}_{j, \text{rest}}^{-1}$ and bone weights $w_{v, j}$:
@@ -87,22 +86,20 @@ Subject to the partition of unity:
 $$\sum_{j} w_{v, j} = 1.0, \quad w_{v, j} \ge 0$$
 At rest pose ($\mathbf{M}_j = \mathbf{M}_{j, \text{rest}}$):
 $$\mathbf{M}_j \mathbf{B}_j = \mathbf{M}_{j, \text{rest}} \mathbf{M}_{j, \text{rest}}^{-1} = \mathbf{I}_{4\times4} \implies \mathbf{v}' = \sum_j w_{v, j} \mathbf{I} \mathbf{v} = \mathbf{v}$$
-The rest skinning error is:
-$$\text{rest\_skin\_error} = \max_{v \in \text{Vertices}} \|\mathbf{v}' - \mathbf{v}\|_2$$
-**Authoritative Bound**: $\text{rest\_skin\_error} < 10^{-3}\text{ cm}$ (sub-micrometre threshold).
+The rest skinning error (`rest_skin_error`) is:
+$$\epsilon_{\text{skin,rest}} = \max_{v \in \text{Vertices}} \|\mathbf{v}' - \mathbf{v}\|_2$$
+**Authoritative Bound**: `rest_skin_error` $< 10^{-3}\text{ cm}$ (sub-micrometre threshold).
 
 #### 3.2.3. Retargeting Twist Stability & Quaternion Geodesic Continuity (`tests/test_retarget_stability.py`)
 The analytical retargeter determines bone orientations via swing-twist decomposition. For degrees of freedom with discrete $180^\circ$ twist ambiguity, `pick_closest_aim_twist` selects the variant minimising rotation distance to the previous frame's orientation:
 $$\theta_{\text{twist}} = \arg\min_{\phi \in \{0, \pi\}} \|\mathbf{R}(\phi) - \mathbf{R}_{t-1}\|_F$$
-Under smooth continuous joint trajectories, no unexpected discrete $180^\circ$ jumps occur:
-$$\text{twist\_events} = 0$$
+Under smooth continuous joint trajectories, no unexpected discrete $180^\circ$ jumps occur (`twist_events = 0`):
+$$N_{\text{twist}} = 0$$
 
-To eliminate $C^0$ discontinuities in animated quaternion tracks caused by the $S^3 \to \mathrm{SO}(3)$ antipodal double cover $(\mathbf{q} \sim -\mathbf{q})$, `continue_quaternion` enforces:
-$$\mathbf{q}_t^* = \begin{cases} -\mathbf{q}_t & \text{if } \mathbf{q}_t \cdot \mathbf{q}_{t-1}^* < 0 \\ \mathbf{q}_t & \text{otherwise} \end{cases}$$
-This guarantees the inner product remains non-negative across all keyframed frames:
-$$\forall t \ge 1, \quad \mathbf{q}_t^* \cdot \mathbf{q}_{t-1}^* \ge 0 \implies \text{quat\_sign\_flips} = 0$$
+To eliminate $C^0$ discontinuities in animated quaternion tracks caused by the $S^3 \to \mathrm{SO}(3)$ antipodal double cover $(\mathbf{q} \sim -\mathbf{q})$, `continue_quaternion` negates $\mathbf{q}_t$ whenever $\mathbf{q}_t \cdot \mathbf{q}_{t-1}^* < 0$. This guarantees the inner product remains non-negative across all keyframed frames (`quat_sign_flips = 0`):
+$$\forall t \ge 1, \quad \mathbf{q}_t^* \cdot \mathbf{q}_{t-1}^* \ge 0 \implies N_{\text{flip}} = 0$$
 
-#### 3.2.4. Adaptive One-Euro ($1€$) Filter Acceleration Noise Reduction (`tests/test_one_euro_filter.py`)
+#### 3.2.4. Adaptive One-Euro (1€) Filter Acceleration Noise Reduction (`tests/test_one_euro_filter.py`)
 Monocular landmark depth coordinates exhibit high-frequency spatial jitter. The frame-to-frame jerk $\mathbf{j}(t) \in \mathbb{R}^3$ measures the third derivative (acceleration noise):
 $$\mathbf{j}(t) = \frac{\mathbf{x}(t) - 3\mathbf{x}(t-1) + 3\mathbf{x}(t-2) - \mathbf{x}(t-3)}{T_e^3}$$
 The mean squared jerk is:
@@ -143,7 +140,7 @@ $$\text{Jerk Reduction} = \frac{\operatorname{MSJ}_{\text{raw}} - \operatorname{
 Automated verification executed in headless Blender 5.2.2 LTS via `blender-launcher.exe`:
 - **Armature & Hierarchy**: Locates `ARMATURE` object and verifies all 25 core `rig:*` bones.
 - **Skinned Meshes**: Locates `MESH` objects (`Alpha_Surface`, `Alpha_Joints`), verifies vertex counts, vertex groups, and active `ARMATURE` modifiers.
-- **Skeletal Animation**: Verifies `Action` on Armature, $\operatorname{count}(\text{F-curves}) > 0$, and valid frame range ($\text{frame\_end} \ge \text{frame\_start}$).
+- **Skeletal Animation**: Verifies `Action` on Armature, $\operatorname{count}(\text{F-curves}) > 0$, and valid frame range (`frame_end >= frame_start`).
 - **Headless Render**: Renders test frame to disk at $512\times 512$ PNG via camera and lighting.
 - **Disk Logging & Structured JSON**: Writes all console logs and status directly to disk log file (`STATUS: PASS`), writing verification metrics to JSON.
 
