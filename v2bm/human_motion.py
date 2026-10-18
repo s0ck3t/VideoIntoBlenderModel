@@ -28,6 +28,11 @@ class HumanMotion:
     root_orientation: np.ndarray | None = None
     world_landmarks: np.ndarray | None = None
     screen_landmarks: np.ndarray | None = None
+    face_blendshapes: np.ndarray | None = None  # (F, 52) float32 in [0.0, 1.0]
+    face_blendshape_names: list[str] | None = None  # (52,) ARKit names
+    head_rotation_quat: np.ndarray | None = None  # (F, 4) float32 wxyz
+    gaze_vectors: np.ndarray | None = None  # (F, 2, 3) float32
+    framing: str | None = None  # "full_body" or "portrait"
 
     @property
     def n_frames(self) -> int:
@@ -47,7 +52,11 @@ class HumanMotion:
 
 
 def load_human_motion(path: Path) -> HumanMotion:
-    """Load extracted skeletal motion payload from a skeleton_motion.npz archive."""
+    """Load extracted skeletal motion payload from a skeleton_motion.npz archive.
+
+    Also automatically discovers companion face_motion.npz in the same directory,
+    or reads embedded facial channels if present.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Missing {path}. Run the extraction step first.")
@@ -81,6 +90,43 @@ def load_human_motion(path: Path) -> HumanMotion:
         if "screen_landmarks" in data.files
         else None
     )
+
+    # Load facial motion payload from companion face_motion.npz or embedded keys
+    face_bs = None
+    face_names = None
+    head_quats = None
+    gaze_vecs = None
+    framing = None
+
+    face_npz = path.parent / "face_motion.npz"
+    if face_npz.exists():
+        try:
+            with np.load(face_npz, allow_pickle=True) as fdata:
+                if "blendshapes" in fdata.files:
+                    face_bs = np.asarray(fdata["blendshapes"], dtype=np.float32)
+                if "blendshape_names" in fdata.files:
+                    face_names = [str(x) for x in fdata["blendshape_names"]]
+                if "head_rotation_quat" in fdata.files:
+                    head_quats = np.asarray(fdata["head_rotation_quat"], dtype=np.float32)
+                if "gaze_vectors" in fdata.files:
+                    gaze_vecs = np.asarray(fdata["gaze_vectors"], dtype=np.float32)
+                if "framing" in fdata.files:
+                    framing = str(fdata["framing"])
+        except Exception:
+            pass
+
+    # Fallback to embedded keys in skeleton_motion.npz if companion missed any fields
+    if face_bs is None and "face_blendshapes" in data.files:
+        face_bs = np.asarray(data["face_blendshapes"], dtype=np.float32)
+    if face_names is None and "face_blendshape_names" in data.files:
+        face_names = [str(x) for x in data["face_blendshape_names"]]
+    if head_quats is None and "head_rotation_quat" in data.files:
+        head_quats = np.asarray(data["head_rotation_quat"], dtype=np.float32)
+    if gaze_vecs is None and "gaze_vectors" in data.files:
+        gaze_vecs = np.asarray(data["gaze_vectors"], dtype=np.float32)
+    if framing is None and "framing" in data.files:
+        framing = str(data["framing"])
+
     return HumanMotion(
         joints_3d=joints,
         joint_names=names,
@@ -91,6 +137,11 @@ def load_human_motion(path: Path) -> HumanMotion:
         root_orientation=root_orient,
         world_landmarks=world_lms,
         screen_landmarks=screen_lms,
+        face_blendshapes=face_bs,
+        face_blendshape_names=face_names,
+        head_rotation_quat=head_quats,
+        gaze_vectors=gaze_vecs,
+        framing=framing,
     )
 
 

@@ -109,14 +109,29 @@ def doctor() -> int:
         deps_ok &= _check(f"python module      {module}", _module_available(module), hint)
 
     try:
-        mp_model = checks.ensure_mediapipe_model()
-        model_ok = mp_model.exists()
+        pose_model = checks.ensure_mediapipe_model()
+        pose_ok = pose_model.exists() and pose_model.stat().st_size >= 1_000_000
+        pose_size_mb = (pose_model.stat().st_size / (1024 * 1024)) if pose_ok else 0.0
     except Exception:
-        model_ok = False
+        pose_ok = False
+        pose_size_mb = 0.0
     deps_ok &= _check(
-        "MediaPipe backend  weights/mediapipe/pose_landmarker_full.task",
-        model_ok,
+        f"MediaPipe pose     weights/mediapipe/pose_landmarker_full.task ({pose_size_mb:.2f} MB, Apache-2.0)",
+        pose_ok,
         "downloading pose_landmarker_full.task failed - check internet connection",
+    )
+
+    try:
+        face_model = checks.ensure_mediapipe_face_model()
+        face_ok = face_model.exists() and face_model.stat().st_size >= 1_000_000
+        face_size_mb = (face_model.stat().st_size / (1024 * 1024)) if face_ok else 0.0
+    except Exception:
+        face_ok = False
+        face_size_mb = 0.0
+    deps_ok &= _check(
+        f"MediaPipe face     weights/mediapipe/face_landmarker.task ({face_size_mb:.2f} MB, Apache-2.0)",
+        face_ok,
+        "downloading face_landmarker.task failed - check internet connection",
     )
 
     import shutil as _shutil
@@ -135,8 +150,21 @@ def doctor() -> int:
         "install cupy-cuda13x / cupy-cuda12x (`pip install -e .[cuda]`) and NVIDIA drivers for GPU acceleration",
     )
 
+    face_accel = (
+        "CuPy GPU acceleration (ROI cropping, One-Euro blendshape filtering & morph deltas)"
+        if cuda_caps.cupy_available
+        else "CPU NumPy fallback"
+    )
+    _check(
+        f"face acceleration  {face_accel}",
+        True,
+        "optional GPU acceleration for facial landmarking and blendshape temporal filtering",
+    )
+
+    total_mb = (pose_size_mb + face_size_mb) if (pose_ok and face_ok) else 12.8
     weights_note = (
-        "lightweight Google MediaPipe models (Apache-2.0) execute locally (~9 MB)"
+        f"lightweight Google MediaPipe models (Apache-2.0) execute locally "
+        f"(~{total_mb:.1f} MB: pose {pose_size_mb:.2f} MB, face {face_size_mb:.2f} MB)"
     )
     print(f"\ninference weights: {weights_note}")
 
@@ -172,8 +200,12 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
     image: Path | None = None
     want_image = getattr(args, "image", None) is not None
     want_video = bool(getattr(args, "video", None))
+    framing = getattr(args, "framing", "auto") or "auto"
+    capture_face = getattr(args, "capture_face", True)
     device = getattr(args, "device", "cpu") or "cpu"
-    image_checker = lambda p: checks.check_image(p, device=device)
+    image_checker = lambda p: checks.check_image(
+        p, device=device, framing_mode=framing, capture_face=capture_face
+    )
 
     if want_image and want_video:
         check(
@@ -201,9 +233,13 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
             )
         check_content(f"image is usable    {image.name if image else ''}", image, image_checker)
     video_checker = (
-        (lambda p: checks.check_video(p, allow_multi=True, device=device))
+        (lambda p: checks.check_video(
+            p, allow_multi=True, device=device, framing_mode=framing, capture_face=capture_face
+        ))
         if getattr(args, "target_subject", None)
-        else (lambda p: checks.check_video(p, device=device))
+        else (lambda p: checks.check_video(
+            p, device=device, framing_mode=framing, capture_face=capture_face
+        ))
     )
 
     if want_video:
@@ -268,7 +304,7 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
     else:
         try:
             mp_model = checks.ensure_mediapipe_model()
-            model_present = mp_model.exists()
+            model_present = mp_model.exists() and mp_model.stat().st_size >= 1_000_000
         except Exception:
             model_present = False
         check(
@@ -276,6 +312,18 @@ def preflight(args: argparse.Namespace) -> tuple[Path | None, Path, Path | None,
             model_present,
             "failed to load Google MediaPipe PoseLandmarker model",
         )
+
+        if capture_face:
+            try:
+                face_model = checks.ensure_mediapipe_face_model()
+                face_present = face_model.exists() and face_model.stat().st_size >= 1_000_000
+            except Exception:
+                face_present = False
+            check(
+                "MediaPipe face     weights/mediapipe/face_landmarker.task",
+                face_present,
+                "failed to load Google MediaPipe FaceLandmarker model (~3.76 MB, Apache-2.0)",
+            )
 
     if problems:
         print(f"\n{problems} problem(s) — nothing was run. `v2bm doctor` checks everything.")
@@ -319,6 +367,8 @@ def run(args: argparse.Namespace) -> int:
             output_dir=output_dir,
             progress=progress,
             no_preview=bool(getattr(args, "no_preview", False)),
+            capture_face=getattr(args, "capture_face", True),
+            framing=getattr(args, "framing", "auto"),
         )
     except Exception:
         import traceback
@@ -392,6 +442,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-preview",
         action="store_true",
         help="skip preview videos/images; still write NPZ, GLB, and run.json",
+    )
+    p_run.add_argument(
+        "--capture-face",
+        action="store_true",
+        dest="capture_face",
+        default=True,
+        help="extract and retarget 52 ARKit facial blendshapes and head rotation (default: True)",
+    )
+    p_run.add_argument(
+        "--no-face",
+        action="store_false",
+        dest="capture_face",
+        help="disable facial expression capture and retargeting",
+    )
+    p_run.add_argument(
+        "--framing",
+        choices=["auto", "full_body", "portrait"],
+        default="auto",
+        help=(
+            "camera framing expectation: auto (detect full-body vs portrait close-up), "
+            "full_body (expect head-to-toe performer), or portrait (head and shoulders close-up; "
+            "synthesises neutral rest body skeleton)"
+        ),
     )
 
     p_iso = sub.add_parser(

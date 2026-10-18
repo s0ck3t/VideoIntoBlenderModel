@@ -16,6 +16,9 @@ IMAGE_DIR = ASSETS / "image"
 WEIGHTS = PROJECT_ROOT / "weights"
 OUTPUTS = PROJECT_ROOT / "outputs"
 
+FACE_LANDMARKER_MODEL = WEIGHTS / "mediapipe" / "face_landmarker.task"
+POSE_LANDMARKER_MODEL = WEIGHTS / "mediapipe" / "pose_landmarker_full.task"
+
 VIDEO_SUFFIXES = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 

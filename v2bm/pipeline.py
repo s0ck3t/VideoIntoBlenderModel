@@ -24,7 +24,7 @@ from . import paths
 from .errors import classify_error
 from .human_motion import HumanMotion, load_human_motion
 from .rig.animation import build_animation, pin_character_mesh_to_ground
-from .rig.gltf import write_glb
+from .rig.gltf import export_character_animation_glb, write_glb
 from .rig.kinematics import continue_quaternion, quat_wxyz
 from .rig.retarget import verify_rest_fk
 from .rig.skinned_mesh import load_character_asset, rest_skin_error
@@ -90,6 +90,8 @@ def run_pipeline(
     progress: ProgressWriter | None = None,
     progress_jsonl: Path | None = None,
     no_preview: bool = False,
+    capture_face: bool = True,
+    framing: str = "auto",
 ) -> Path:
     """Full pipeline for one video or still + one rig. Returns the run directory.
 
@@ -185,6 +187,8 @@ def run_pipeline(
                     device=active_device,
                     verbose=verbose,
                     source_image=image,
+                    framing_mode=framing,
+                    capture_face=capture_face,
                 )
         else:
             from .extract import extract_motion
@@ -197,6 +201,8 @@ def run_pipeline(
                 work_dir=run_dir / "cache",
                 device=active_device,
                 verbose=verbose,
+                framing_mode=framing,
+                capture_face=capture_face,
             )
         motion: HumanMotion = load_human_motion(motion_npz)
         print(f"human motion   {motion.n_frames} frames @ {motion.fps:g} fps")
@@ -212,9 +218,22 @@ def run_pipeline(
         if verbose:
             print(f"rest FK error  {rest_err:.3e}   rest skin error {skin_err:.3e} cm")
 
+        # Query target morph names from character asset across all meshes
+        target_morph_names = next(
+            (m.morph_target_names for m in asset.meshes if getattr(m, "morph_target_names", None)),
+            None,
+        )
+
         print("retargeting")
         frames = list(range(motion.n_frames))
-        anim = build_animation(motion, mapping, frames, verbose=verbose, device=active_device)
+        anim = build_animation(
+            motion,
+            mapping,
+            frames,
+            target_morph_names=target_morph_names,
+            verbose=verbose,
+            device=active_device,
+        )
         pin_character_mesh_to_ground(asset, anim, device=active_device)
 
         rotations_npz = run_dir / "rig_rotations.npz"
@@ -224,12 +243,14 @@ def run_pipeline(
         stage = "export"
         writer.emit("export", 0.85, "Writing GLB")
         glb_path = run_dir / "character_animation.glb"
-        write_glb(
+        export_character_animation_glb(
             glb_path,
             asset,
             anim.r_anim_rig,
             anim.hips_cm_rig,
             anim.fps,
+            morph_weights_frames=anim.morph_weights,
+            morph_target_names=target_morph_names,
             device=active_device,
         )
         print(f"saved {glb_path}")
@@ -239,6 +260,9 @@ def run_pipeline(
             "humanoid_rotations": rotations_npz.name,
             "humanoid_character_glb": glb_path.name,
         }
+        face_npz = run_dir / "face_motion.npz"
+        if face_npz.exists():
+            outputs["face_motion"] = face_npz.name
         if not no_preview:
             stage = "preview"
             writer.emit("preview", 0.90, "Rendering previews")
@@ -274,6 +298,8 @@ def run_pipeline(
             "started": started.isoformat(timespec="seconds"),
             "elapsed_s": round(time.time() - t0, 1),
             "command": sys.argv,
+            "capture_face": capture_face,
+            "framing": framing,
             "video": None if image is not None else str(video),
             "target_subject": target_subject,
             "isolated_video": str(extract_video) if extract_video != video else None,

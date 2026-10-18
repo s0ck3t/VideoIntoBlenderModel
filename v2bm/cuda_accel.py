@@ -815,17 +815,46 @@ def optimise_windows_cuda(
 # ==============================================================================
 
 def skin_mesh_cuda(vertices: np.ndarray, weights: np.ndarray, palette: np.ndarray) -> np.ndarray:
-    """Single-frame Linear Blend Skinning on CUDA."""
+    """Linear Blend Skinning on CUDA (single frame or batched frames).
+
+    Supports:
+    - Single frame: vertices (V, 3), palette (B, 4, 4) -> (V, 3)
+    - Batched frames: vertices (F, V, 3), palette (B, 4, 4) or (F, B, 4, 4) -> (F, V, 3)
+    """
     v_gpu = cp.asarray(vertices, dtype=cp.float64)
     w_gpu = cp.asarray(weights, dtype=cp.float64)
-    p_gpu = cp.asarray(palette, dtype=cp.float64)  # (B, 4, 4)
+    p_gpu = cp.asarray(palette, dtype=cp.float64)
 
-    ones = cp.ones((v_gpu.shape[0], 1), dtype=cp.float64)
-    vh = cp.concatenate([v_gpu, ones], axis=1)  # (V, 4)
-    # Blended transformation per vertex: (V, B) x (B, 4, 4) -> (V, 4, 4)
-    blended_mats = cp.einsum("vb,bij->vij", w_gpu, p_gpu)
-    posed = cp.einsum("vij,vj->vi", blended_mats[:, :3, :], vh)
-    return cp.asnumpy(posed)
+    if v_gpu.ndim == 2:
+        # Single frame: (V, 3)
+        if p_gpu.ndim == 4:
+            p_gpu = p_gpu[0]
+        ones = cp.ones((v_gpu.shape[0], 1), dtype=cp.float64)
+        vh = cp.concatenate([v_gpu, ones], axis=1)  # (V, 4)
+        blended_mats = cp.einsum("vb,bij->vij", w_gpu, p_gpu)
+        posed = cp.einsum("vij,vj->vi", blended_mats[:, :3, :], vh)
+        return cp.asnumpy(posed)
+    elif v_gpu.ndim == 3:
+        # Batched frames: (F, V, 3)
+        F, V, _ = v_gpu.shape
+        ones = cp.ones((F, V, 1), dtype=cp.float64)
+        vh = cp.concatenate([v_gpu, ones], axis=2)  # (F, V, 4)
+        if p_gpu.ndim == 3:
+            # Single palette (B, 4, 4) shared across F frames
+            blended_mats = cp.einsum("vb,bij->vij", w_gpu, p_gpu)  # (V, 4, 4)
+            posed = cp.einsum("vij,fvj->fvi", blended_mats[:, :3, :], vh)  # (F, V, 3)
+        elif p_gpu.ndim == 4:
+            # Per-frame palette (F, B, 4, 4)
+            if p_gpu.shape[0] != F:
+                raise ValueError(
+                    f"Frame count mismatch: vertices has {F} frames but palette has {p_gpu.shape[0]}"
+                )
+            blended_mats = cp.einsum("vb,fbij->fvij", w_gpu, p_gpu)  # (F, V, 4, 4)
+            posed = cp.einsum("fvij,fvj->fvi", blended_mats[:, :, :3, :], vh)  # (F, V, 3)
+        else:
+            raise ValueError(f"Unsupported palette shape for CUDA skinning: {p_gpu.shape}")
+        return cp.asnumpy(posed)
+    raise ValueError(f"Unsupported vertices ndim for CUDA skinning: {v_gpu.ndim}")
 
 
 def skin_frames_cuda(asset, anim, indices: list[int]) -> list[list[np.ndarray]]:
@@ -856,15 +885,28 @@ def skin_frames_cuda(asset, anim, indices: list[int]) -> list[list[np.ndarray]]:
         ibm_gpu = cp.asarray(mesh.ibm, dtype=cp.float64)          # (B, 4, 4)
         palettes_gpu = cp.matmul(world_gpu, ibm_gpu[None, ...])   # (F, B, 4, 4)
         w_gpu = cp.asarray(mesh.weights, dtype=cp.float64)        # (V, B)
-        v_gpu = cp.asarray(mesh.vertices, dtype=cp.float64)       # (V, 3)
-        ones = cp.ones((v_gpu.shape[0], 1), dtype=cp.float64)
-        vh_gpu = cp.concatenate([v_gpu, ones], axis=1)            # (V, 4)
 
-        # Transform vertices by each bone: (F, B, 3, 4) @ (V, 4)^T -> weighted sum over B
-        # Equivalent to: V_bone(v, b, j) = w(v, b) * vh(v, j) -> shape (V, B, 4)
-        vw_gpu = w_gpu[:, :, None] * vh_gpu[:, None, :]           # (V, B, 4)
-        # Contract (F, B, 3, 4) with (V, B, 4) over (B, 4) -> (F, V, 3)
-        posed_gpu = cp.einsum("fbij,vbj->fvi", palettes_gpu[:, :, :3, :], vw_gpu) * scale
+        has_morph = (
+            anim.morph_weights is not None
+            and getattr(mesh, "morph_deltas_pos", None) is not None
+        )
+        if has_morph:
+            mw = anim.morph_weights[indices]
+            morphed = evaluate_morph_cuda(
+                mesh.vertices, mesh.morph_deltas_pos, mw, device="cuda"
+            )  # (F, V, 3)
+            v_gpu = cp.asarray(morphed, dtype=cp.float64)
+            ones = cp.ones((n_frames, v_gpu.shape[1], 1), dtype=cp.float64)
+            vh_gpu = cp.concatenate([v_gpu, ones], axis=2)        # (F, V, 4)
+            blended_mats = cp.einsum("vb,fbij->fvij", w_gpu, palettes_gpu[:, :, :3, :])  # (F, V, 3, 4)
+            posed_gpu = cp.einsum("fvij,fvj->fvi", blended_mats, vh_gpu) * scale
+        else:
+            v_gpu = cp.asarray(mesh.vertices, dtype=cp.float64)       # (V, 3)
+            ones = cp.ones((v_gpu.shape[0], 1), dtype=cp.float64)
+            vh_gpu = cp.concatenate([v_gpu, ones], axis=1)            # (V, 4)
+            vw_gpu = w_gpu[:, :, None] * vh_gpu[:, None, :]           # (V, B, 4)
+            posed_gpu = cp.einsum("fbij,vbj->fvi", palettes_gpu[:, :, :3, :], vw_gpu) * scale
+
         per_mesh_frames.append(cp.asnumpy(posed_gpu))
 
     out: list[list[np.ndarray]] = []
@@ -1117,3 +1159,239 @@ def project_and_shade_mesh_cuda(
     tri_sorted = cp.asnumpy(tri_all[order])
     rgb_sorted = cp.asnumpy(rgb_all[order].astype(cp.int32))
     return tri_sorted, rgb_sorted
+
+
+# ==============================================================================
+# Facial Expression & Blendshape CUDA Acceleration
+# ==============================================================================
+
+_ONE_EURO_BLENDSHAPES_KERNEL = None
+
+
+def filter_blendshapes_cuda(
+    blendshapes: np.ndarray,
+    fps: float = 30.0,
+    min_cutoff: float = 1.0,
+    beta: float = 0.01,
+    d_cutoff: float = 1.0,
+    device: str | None = "cuda",
+) -> np.ndarray:
+    """Filter (T, 52) ARKit blendshapes on NVIDIA GPU via CuPy CUDA C kernel.
+
+    Provides vectorised 1€ adaptive low-pass filtering across all 52 facial
+    expression channels simultaneously with higher velocity sensitivity on
+    blink channels. Seamlessly falls back to host CPU NumPy if CUDA is unavailable.
+    """
+    global _ONE_EURO_BLENDSHAPES_KERNEL
+    if not _HAS_CUPY or cp is None or not use_cupy(device):
+        from .extract import OneEuroFilterBlendshapes
+
+        return OneEuroFilterBlendshapes(
+            fps=fps, min_cutoff=min_cutoff, beta=beta, d_cutoff=d_cutoff
+        ).filter_trajectory(blendshapes)
+
+    T, C = blendshapes.shape
+    if T <= 1 or C != 52:
+        return blendshapes.copy()
+
+    if _ONE_EURO_BLENDSHAPES_KERNEL is None:
+        _ONE_EURO_BLENDSHAPES_KERNEL = cp.RawKernel(
+            r'''
+        extern "C" __global__
+        void one_euro_blendshapes(
+            const float* __restrict__ input,
+            float* __restrict__ output,
+            const float* __restrict__ min_cutoffs,
+            const float* __restrict__ betas,
+            int num_frames,
+            int num_channels,
+            float fps,
+            float d_cutoff
+        ) {
+            int c = blockDim.x * blockIdx.x + threadIdx.x;
+            if (c >= num_channels) return;
+
+            float te = 1.0f / fps;
+            float tau_d = 1.0f / (2.0f * 3.141592653589793f * d_cutoff);
+            float alpha_d = 1.0f / (1.0f + tau_d / te);
+
+            float min_cut = min_cutoffs[c];
+            float beta_val = betas[c];
+
+            float x_prev = input[c];
+            output[c] = x_prev;
+            float dx_prev = 0.0f;
+
+            for (int t = 1; t < num_frames; ++t) {
+                int idx = t * num_channels + c;
+                float x = input[idx];
+                float dx = (x - x_prev) / te;
+                float dx_hat = alpha_d * dx + (1.0f - alpha_d) * dx_prev;
+
+                float fc = min_cut + beta_val * fabsf(dx_hat);
+                float tau = 1.0f / (2.0f * 3.141592653589793f * fc);
+                float alpha = 1.0f / (1.0f + tau / te);
+
+                float x_hat = alpha * x + (1.0f - alpha) * x_prev;
+                output[idx] = x_hat;
+                x_prev = x_hat;
+                dx_prev = dx_hat;
+            }
+        }
+        ''',
+            "one_euro_blendshapes",
+        )
+
+    min_cut = np.full(52, min_cutoff, dtype=np.float32)
+    betas = np.full(52, beta, dtype=np.float32)
+    # Higher velocity sensitivity on ARKit blink channels (8: eyeBlinkLeft, 9: eyeBlinkRight)
+    for b_idx in [8, 9]:
+        min_cut[b_idx] = 1.5
+        betas[b_idx] = 0.08
+
+    data_cp = cp.asarray(blendshapes, dtype=cp.float32)
+    out_cp = cp.empty_like(data_cp)
+    min_cut_cp = cp.asarray(min_cut)
+    betas_cp = cp.asarray(betas)
+
+    threads_per_block = 64
+    blocks = (C + threads_per_block - 1) // threads_per_block
+    _ONE_EURO_BLENDSHAPES_KERNEL(
+        (blocks,),
+        (threads_per_block,),
+        (
+            data_cp,
+            out_cp,
+            min_cut_cp,
+            betas_cp,
+            T,
+            C,
+            cp.float32(fps),
+            cp.float32(d_cutoff),
+        ),
+    )
+    return cp.asnumpy(out_cp)
+
+
+def apply_anatomical_constraints_cuda(
+    blendshapes: np.ndarray,
+    device: str | None = "cuda",
+) -> np.ndarray:
+    """Enforce physiological bounds, antagonistic muting, and eyelid-gaze coupling on GPU.
+
+    Supports both 1D (52,) and 2D (T, 52) arrays. When CUDA is available, executes
+    via vectorised CuPy tensor operations; falls back to CPU NumPy seamlessly.
+    """
+    if not _HAS_CUPY or cp is None or not use_cupy(device):
+        from .extract import apply_anatomical_constraints
+
+        return apply_anatomical_constraints(blendshapes)
+
+    is_1d = blendshapes.ndim == 1
+    data_cp = cp.asarray(blendshapes[None, :] if is_1d else blendshapes, dtype=cp.float32)
+    out = cp.clip(data_cp, 0.0, 1.0).copy()
+
+    # Canonical ARKit blendshape indices
+    blink_l, blink_r = 8, 9
+    down_l, down_r = 10, 11
+    wide_l, wide_r = 20, 21
+    jaw_l, jaw_open, jaw_r = 23, 24, 25
+    mouth_close = 26
+    mouth_frown_l, mouth_frown_r = 29, 30
+    mouth_l = 32
+    mouth_pucker = 37
+    mouth_r = 38
+    mouth_smile_l, mouth_smile_r = 43, 44
+    mouth_stretch_l, mouth_stretch_r = 45, 46
+
+    # 1. Eyelid-gaze decoupling: downward gaze lid lowering
+    out[:, wide_l] *= cp.maximum(0.0, 1.0 - out[:, down_l] * 0.8)
+    out[:, wide_r] *= cp.maximum(0.0, 1.0 - out[:, down_r] * 0.8)
+    out[:, blink_l] = cp.clip(out[:, blink_l] - 0.45 * out[:, down_l], 0.0, 1.0)
+    out[:, blink_r] = cp.clip(out[:, blink_r] - 0.45 * out[:, down_r], 0.0, 1.0)
+
+    # 2. Antagonistic: eyeWide vs eyeBlink
+    out[:, wide_l] *= cp.maximum(0.0, 1.0 - out[:, blink_l] * 1.5)
+    out[:, wide_r] *= cp.maximum(0.0, 1.0 - out[:, blink_r] * 1.5)
+
+    # 3. Antagonistic: jawOpen vs mouthClose
+    out[:, mouth_close] *= cp.maximum(0.0, 1.0 - out[:, jaw_open] * 2.0)
+
+    # 4. Jaw lateral excursion (mutual exclusivity)
+    delta_jaw = out[:, jaw_l] - out[:, jaw_r]
+    out[:, jaw_l] = cp.maximum(0.0, delta_jaw)
+    out[:, jaw_r] = cp.maximum(0.0, -delta_jaw)
+
+    # 5. Mouth lateral deviation (mutual exclusivity)
+    delta_mouth = out[:, mouth_l] - out[:, mouth_r]
+    out[:, mouth_l] = cp.maximum(0.0, delta_mouth)
+    out[:, mouth_r] = cp.maximum(0.0, -delta_mouth)
+
+    # 6. Smile vs Frown antagonism
+    out[:, mouth_frown_l] *= cp.maximum(0.0, 1.0 - 1.5 * out[:, mouth_smile_l])
+    out[:, mouth_frown_r] *= cp.maximum(0.0, 1.0 - 1.5 * out[:, mouth_smile_r])
+
+    # 7. Pucker vs Stretch antagonism
+    stretch_max = cp.maximum(out[:, mouth_stretch_l], out[:, mouth_stretch_r])
+    out[:, mouth_pucker] *= cp.maximum(0.0, 1.0 - stretch_max)
+
+    res = cp.asnumpy(cp.clip(out, 0.0, 1.0))
+    return res[0] if is_1d else res
+
+
+def evaluate_morph_cuda(
+    vertices: np.ndarray,
+    morph_deltas_pos: np.ndarray,
+    weights: np.ndarray,
+    device: str | None = "cuda",
+) -> np.ndarray:
+    """Evaluate morphed vertices on CUDA via tensor contraction with clean CPU fallback.
+
+    Computes: v_morphed = v_base + sum(w_m * delta_p_m) with weights clamped to [0.0, 1.0].
+
+    Supports:
+    - Single frame: vertices (V, 3), morph_deltas_pos (M, V, 3), weights (M,) -> (V, 3)
+    - Batched frames: vertices (V, 3), morph_deltas_pos (M, V, 3), weights (F, M) -> (F, V, 3)
+
+    Parameters
+    ----------
+    vertices : np.ndarray or cp.ndarray
+        Base vertex positions, shape (V, 3).
+    morph_deltas_pos : np.ndarray or cp.ndarray
+        Morph displacement deltas, shape (M, V, 3).
+    weights : np.ndarray or cp.ndarray
+        Morph target activation weights, shape (M,) or (F, M).
+    device : str or None, optional
+        Target device ('cuda' or 'cpu'). Default is 'cuda'.
+
+    Returns
+    -------
+    np.ndarray
+        Morphed vertex positions of shape (V, 3) or (F, V, 3).
+    """
+    dtype = vertices.dtype if hasattr(vertices, "dtype") else np.float32
+    if not _HAS_CUPY or cp is None or not use_cupy(device):
+        v = np.asarray(vertices, dtype=dtype)
+        deltas = np.asarray(morph_deltas_pos, dtype=dtype)
+        w = np.clip(np.asarray(weights, dtype=dtype), 0.0, 1.0)
+        if w.ndim == 1:
+            return v + np.einsum("m,mvj->vj", w, deltas)
+        elif w.ndim == 2:
+            return v[None, :, :] + np.einsum("fm,mvj->fvj", w, deltas)
+        raise ValueError(f"Unsupported weights shape on CPU: {weights.shape}")
+
+    v_gpu = cp.asarray(vertices, dtype=dtype)
+    deltas_gpu = cp.asarray(morph_deltas_pos, dtype=dtype)
+    w_gpu = cp.clip(cp.asarray(weights, dtype=dtype), 0.0, 1.0)
+
+    if w_gpu.ndim == 1:
+        morphed_gpu = v_gpu + cp.einsum("m,mvj->vj", w_gpu, deltas_gpu)
+    elif w_gpu.ndim == 2:
+        morphed_gpu = v_gpu[None, :, :] + cp.einsum("fm,mvj->fvj", w_gpu, deltas_gpu)
+    else:
+        raise ValueError(f"Unsupported weights shape on CUDA: {weights.shape}")
+
+    if isinstance(vertices, cp.ndarray) and isinstance(weights, cp.ndarray):
+        return morphed_gpu
+    return cp.asnumpy(morphed_gpu)
+

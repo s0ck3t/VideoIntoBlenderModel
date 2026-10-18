@@ -8,6 +8,7 @@ extra wrapping folder.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import zipfile
@@ -105,10 +106,16 @@ def validate_zip(zip_path: Path) -> list[str]:
     return errors
 
 
+check_zip_structure = validate_zip
+
+
 def maybe_blender_validate(zip_path: Path) -> str | None:
     blender = shutil.which("blender")
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
     candidates = [
         Path(blender) if blender else None,
+        Path(local_app_data) / "Microsoft" / "WindowsApps" / "blender-launcher.exe" if local_app_data else None,
+        Path(local_app_data) / "Microsoft" / "WindowsApps" / "blender.exe" if local_app_data else None,
         Path("/Applications/Blender.app/Contents/MacOS/Blender"),
         Path(r"C:\Program Files\Blender Foundation\Blender 4.2\blender.exe"),
         Path(r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"),

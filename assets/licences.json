@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "1.0.0",
   "project": "VideoIntoBlenderModel",
-  "last_updated_utc": "2026-10-15T16:00:00Z",
+  "last_updated_utc": "2026-10-17T21:00:00Z",
   "provenance_statement": "All runtime assets in VideoIntoBlenderModel are strictly commercial-permissive, non-copyleft, and free of non-commercial research licensing restrictions.",
   "assets": {
     "videos": [
@@ -128,6 +128,108 @@
           "rest_skin_error_cm": 2.6958e-07
         },
         "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion diffuse PNG texture, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-4 and rest skin error < 1e-2 cm, and passing headless Blender GLB validation."
+      },
+      {
+        "id": "rig_humanoid_rig",
+        "title": "Procedural Expressive CC0 Humanoid Character Rig",
+        "creator": "VideoIntoBlenderModel Maintainers",
+        "source_url": "scripts/generate_humanoid_rig.py",
+        "local_path": "assets/rigs/humanoid_rig.fbx",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Procedural character rig generated via scripts/generate_humanoid_rig.py under CC0 1.0 Universal.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "bone_count": 25,
+          "vertex_count": 3912,
+          "shape_key_count": 52
+        },
+        "verification_statement": "Verified compliant: procedural 25-bone CC0 humanoid character rig with 52 analytical ARKit shape keys, passing v2bm.checks.check_rig validation with zero errors."
+      }
+    ],
+    "images": [
+      {
+        "id": "image_urban_dancer_pose",
+        "title": "Urban Dancer Full-Body Pose",
+        "creator": "VideoIntoBlenderModel Contributors",
+        "source_url": "assets/image/urban_dancer_pose.png",
+        "local_path": "assets/image/urban_dancer_pose.png",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Image: 'urban_dancer_pose.png', dedicated to the public domain under CC0 1.0 Universal.",
+        "media_metadata": {
+          "format": "png",
+          "resolution": "1080x1920",
+          "framing": "full_body",
+          "person_count": 1
+        },
+        "verification_statement": "Verified compliant: high-resolution still photograph depicting a full-body dance pose, passing v2bm.checks.check_image validation with zero errors."
+      },
+      {
+        "id": "image_expressive_portrait_smile",
+        "title": "Expressive Smiling Portrait Still Photo",
+        "creator": "VideoIntoBlenderModel Contributors",
+        "source_url": "assets/image/expressive_portrait_smile.png",
+        "local_path": "assets/image/expressive_portrait_smile.png",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Image: 'expressive_portrait_smile.png', dedicated to the public domain under CC0 1.0 Universal.",
+        "media_metadata": {
+          "format": "png",
+          "resolution": "1024x1024",
+          "framing": "portrait",
+          "person_count": 1
+        },
+        "verification_statement": "Verified compliant: high-resolution portrait photograph depicting an expressive smile, passing v2bm.checks.check_image portrait validation with zero errors."
+      }
+    ],
+    "model_weights": [
+      {
+        "id": "weight_pose_landmarker_full",
+        "title": "MediaPipe Pose Landmarker Full Task",
+        "creator": "Google LLC",
+        "source_url": "https://developers.google.com/mediapipe/solutions/vision/pose_landmarker",
+        "direct_download_url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+        "local_path": "weights/mediapipe/pose_landmarker_full.task",
+        "licence_name": "Apache License 2.0",
+        "licence_spdx": "Apache-2.0",
+        "commercial_use_allowed": true,
+        "attribution_required": true,
+        "attribution_text": "Google MediaPipe Pose Landmarker (Full) Model, Copyright 2023 Google LLC, licensed under Apache License 2.0.",
+        "model_metadata": {
+          "size_bytes": 9398198,
+          "format": "MediaPipe Task Bundle (TFLite)",
+          "precision": "float16",
+          "landmarks_count": 33
+        },
+        "verification_statement": "Verified compliant: authentic MediaPipe Pose Landmarker model weights under Apache-2.0, passing SHA256 integrity checks."
+      },
+      {
+        "id": "weight_face_landmarker",
+        "title": "MediaPipe Face Landmarker Task",
+        "creator": "Google LLC",
+        "source_url": "https://developers.google.com/mediapipe/solutions/vision/face_landmarker",
+        "direct_download_url": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+        "local_path": "weights/mediapipe/face_landmarker.task",
+        "licence_name": "Apache License 2.0",
+        "licence_spdx": "Apache-2.0",
+        "commercial_use_allowed": true,
+        "attribution_required": true,
+        "attribution_text": "Google MediaPipe Face Landmarker Model, Copyright 2023 Google LLC, licensed under Apache License 2.0.",
+        "model_metadata": {
+          "size_bytes": 3758596,
+          "format": "MediaPipe Task Bundle (TFLite)",
+          "precision": "float16",
+          "landmarks_count": 478,
+          "blendshapes_count": 52
+        },
+        "verification_statement": "Verified compliant: authentic MediaPipe Face Landmarker model weights under Apache-2.0, extracting 478 landmarks and 52 ARKit blendshapes."
       }
     ],
     "supplemental_assets": [

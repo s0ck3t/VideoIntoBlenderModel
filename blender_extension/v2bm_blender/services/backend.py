@@ -49,6 +49,8 @@ def build_run_argv(
     output_dir: str | Path,
     progress_jsonl: str | Path,
     preview: bool,
+    capture_face: bool = True,
+    framing: str = "auto",
 ) -> list[str]:
     """Build `external-python -m v2bm.cli run ...` as a list."""
     if source_type not in {"video", "image"}:
@@ -74,6 +76,15 @@ def build_run_argv(
     cmd.extend([flag, os.fspath(as_user_path(source))])
     if not preview:
         cmd.append("--no-preview")
+
+    if not capture_face:
+        cmd.append("--no-face")
+    else:
+        cmd.append("--capture-face")
+
+    if framing in {"auto", "full_body", "portrait"}:
+        cmd.extend(["--framing", framing])
+
     return cmd
 
 
@@ -259,10 +270,8 @@ def interpret_doctor_output(exit_code: int | None, stdout: str) -> tuple[str, st
 
     blocking: list[str] = []
     if _doctor_line_missing(text, "python module") or "no module named" in low:
-        if "torch" in low or "legacy_lifter" in low or "cv2" in low or "numpy" in low:
+        if "torch" in low or "cv2" in low or "numpy" in low:
             blocking.append("err_package")
-    if _doctor_line_missing(text, "Body-Model") or _doctor_line_bad(text, "Body-Model"):
-        blocking.append("err_bodymodel")
     if blocking:
         seen: list[str] = []
         for item in blocking:

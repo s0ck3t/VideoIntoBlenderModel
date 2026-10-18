@@ -59,6 +59,8 @@ class V2BM_OT_run_pipeline(Operator):
             output_dir=output_dir,
             progress_jsonl=progress_path,
             preview=bool(props.generate_preview),
+            capture_face=bool(props.capture_face),
+            framing=str(props.framing),
         )
         try:
             process, log_file = launch_process(

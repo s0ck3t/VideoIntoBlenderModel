@@ -440,6 +440,43 @@ class SkinnedMesh:
     texture_image: bytes | None = None  # Raw PNG or JPEG image bytes
     texture_mime: str | None = None  # "image/png" or "image/jpeg"
     uvs: np.ndarray | None = None  # (F, 3, 2) per-triangle UV coordinates in [0, 1]
+    morph_target_names: list[str] | None = None  # (M,) canonical ARKit blendshape names
+    morph_deltas_pos: np.ndarray | None = None  # (M, V, 3) displacement deltas in FBX cm
+    morph_deltas_norm: np.ndarray | None = None  # (M, V, 3) normal deltas
+
+    def evaluate_morph(self, weights: np.ndarray | None, device: str = "cpu") -> np.ndarray:
+        """Evaluate morphed vertex coordinates: v_morphed = v_base + sum(w_m * delta_p_m)."""
+        vm, _ = evaluate_morph(self, weights)
+        return vm
+
+
+def evaluate_morph(
+    mesh: SkinnedMesh,
+    weights: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Evaluate morphed vertex coordinates and normal deltas.
+
+    Returns (v_morphed, n_morphed) where:
+    v_morphed = v_base + sum(w_m * delta_p_m) with weights clamped to [0.0, 1.0].
+    If morph_deltas_norm is present, n_morphed = sum(w_m * delta_n_m), else None.
+    """
+    if weights is None or mesh.morph_deltas_pos is None:
+        return mesh.vertices, None
+    w = np.asarray(weights, dtype=np.float32)
+    clamped = np.clip(w, 0.0, 1.0)
+    if clamped.ndim == 1:
+        v_morphed = mesh.vertices + np.einsum("m,mvj->vj", clamped, mesh.morph_deltas_pos)
+        n_morphed = None
+        if mesh.morph_deltas_norm is not None:
+            n_morphed = np.einsum("m,mvj->vj", clamped, mesh.morph_deltas_norm)
+        return v_morphed, n_morphed
+    elif clamped.ndim == 2:
+        v_morphed = mesh.vertices[None, :, :] + np.einsum("fm,mvj->fvj", clamped, mesh.morph_deltas_pos)
+        n_morphed = None
+        if mesh.morph_deltas_norm is not None:
+            n_morphed = np.einsum("fm,mvj->fvj", clamped, mesh.morph_deltas_norm)
+        return v_morphed, n_morphed
+    raise ValueError(f"Unsupported morph weights shape: {w.shape}")
 
 
 @dataclass
@@ -539,8 +576,11 @@ def load_character_asset(
 
     limb_uids = {uid for uid, obj in objects.items() if obj["node_name"] == "Model" and obj.get("class") == "LimbNode"}
     skin_uids = {uid for uid, obj in objects.items() if obj["node_name"] == "Deformer" and obj.get("class") == "Skin"}
-    geom_uids = {uid for uid, obj in objects.items() if obj["node_name"] == "Geometry"}
+    geom_uids = {uid for uid, obj in objects.items() if obj["node_name"] == "Geometry" and obj.get("class") != "Shape"}
     cluster_uids = {uid for uid, obj in objects.items() if obj["node_name"] == "Deformer" and obj.get("class") == "Cluster"}
+    bs_deformers = {uid: obj for uid, obj in objects.items() if obj["node_name"] == "Deformer" and obj.get("class") == "BlendShape"}
+    bs_channels = {uid: obj for uid, obj in objects.items() if obj["node_name"] == "Deformer" and obj.get("class") == "BlendShapeChannel"}
+    shape_geoms = {uid: obj for uid, obj in objects.items() if obj["node_name"] == "Geometry" and obj.get("class") == "Shape"}
 
     skin_to_geom: dict[int, int] = {}
     cluster_to_skin: dict[int, int] = {}
@@ -662,6 +702,68 @@ def load_character_asset(
         row = weights.sum(axis=1, keepdims=True)
         row = np.where(row < 1e-8, 1.0, row)
         weights = weights / row
+
+        # Extract blendshape morph targets for this geometry
+        bs_uids = [
+            src for kind, src, dst in connections
+            if kind == "OO" and src in bs_deformers and dst == geom_uid
+        ] + [
+            dst for kind, src, dst in connections
+            if kind == "OO" and dst in bs_deformers and src == geom_uid
+        ]
+
+        morph_names: list[str] = []
+        morph_pos_list: list[np.ndarray] = []
+        morph_norm_list: list[np.ndarray] = []
+
+        for bs_uid in bs_uids:
+            ch_uids = [
+                src for kind, src, dst in connections
+                if kind == "OO" and src in bs_channels and dst == bs_uid
+            ] + [
+                dst for kind, src, dst in connections
+                if kind == "OO" and dst in bs_channels and src == bs_uid
+            ]
+            for ch_uid in ch_uids:
+                ch_obj = bs_channels[ch_uid]
+                ch_name = _fbx_name(ch_obj["name"])
+                sh_uids = [
+                    src for kind, src, dst in connections
+                    if kind == "OO" and src in shape_geoms and dst == ch_uid
+                ] + [
+                    dst for kind, src, dst in connections
+                    if kind == "OO" and dst in shape_geoms and src == ch_uid
+                ]
+                if not sh_uids:
+                    continue
+                sh_obj = shape_geoms[sh_uids[0]]
+                if not ch_name:
+                    ch_name = _fbx_name(sh_obj["name"])
+
+                idx_node = _child_named(sh_obj["raw"], "Indexes")
+                v_node = _child_named(sh_obj["raw"], "Vertices")
+                n_node = _child_named(sh_obj["raw"], "Normals")
+
+                delta_pos = np.zeros_like(vertices, dtype=np.float32)
+                delta_norm = np.zeros_like(vertices, dtype=np.float32)
+
+                if idx_node is not None and v_node is not None:
+                    idxs = np.asarray(idx_node["props"][0], dtype=np.int64)
+                    v_vals = np.asarray(v_node["props"][0], dtype=np.float32).reshape(-1, 3)
+                    delta_pos[idxs] = v_vals
+                if idx_node is not None and n_node is not None:
+                    idxs = np.asarray(idx_node["props"][0], dtype=np.int64)
+                    n_vals = np.asarray(n_node["props"][0], dtype=np.float32).reshape(-1, 3)
+                    delta_norm[idxs] = n_vals
+
+                morph_names.append(ch_name)
+                morph_pos_list.append(delta_pos)
+                morph_norm_list.append(delta_norm)
+
+        morph_target_names = morph_names if morph_names else None
+        morph_deltas_pos = np.stack(morph_pos_list, axis=0) if morph_pos_list else None
+        morph_deltas_norm = np.stack(morph_norm_list, axis=0) if morph_norm_list else None
+
         meshes.append(
             SkinnedMesh(
                 name=_fbx_name(geom["name"]),
@@ -674,6 +776,9 @@ def load_character_asset(
                 texture_image=texture_image,
                 texture_mime=texture_mime,
                 uvs=corners,
+                morph_target_names=morph_target_names,
+                morph_deltas_pos=morph_deltas_pos,
+                morph_deltas_norm=morph_deltas_norm,
             )
         )
     return HumanoidRigAsset(rig=rig, meshes=meshes, bone_index=bone_index)
@@ -684,22 +789,107 @@ def bone_palette(world: dict[str, np.ndarray], mesh: SkinnedMesh, order: list[st
     return mats @ mesh.ibm
 
 
-def skin_mesh(mesh: SkinnedMesh, palette: np.ndarray, device: str = "cpu") -> np.ndarray:
-    """Linear blend skinning. palette is (B, 4, 4) = M_world @ IBM."""
-    from ..cuda_accel import skin_mesh_cuda, use_cupy
+def skin_mesh(
+    mesh: SkinnedMesh,
+    palette: np.ndarray,
+    morph_weights: np.ndarray | str | None = None,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Apply Linear Blend Skinning: v_posed = sum_b w_b * (M_world @ IBM @ v_rest).
+
+    Supports:
+    - Single frame: vertices (V, 3), palette (B, 4, 4), morph_weights (M,) or None -> (V, 3)
+    - Batched frames: vertices (F, V, 3), palette (B, 4, 4) or (F, B, 4, 4),
+      morph_weights (F, M) -> (F, V, 3)
+
+    Parameters
+    ----------
+    mesh : SkinnedMesh
+        The target skinned mesh containing rest vertices, bone weights, and morph deltas.
+    palette : np.ndarray
+        Bone matrix palette of shape (B, 4, 4) or (F, B, 4, 4).
+    morph_weights : np.ndarray or None, optional
+        Morph activation weights of shape (M,) for a single frame or (F, M) for batched frames.
+    device : str, optional
+        Execution device ('cpu' or 'cuda'). Default is 'cpu'.
+
+    Returns
+    -------
+    np.ndarray
+        Posed vertex coordinates of shape (V, 3) or (F, V, 3).
+    """
+    if isinstance(morph_weights, str):
+        device = morph_weights
+        morph_weights = None
+
+    if morph_weights is not None:
+        mw = np.asarray(morph_weights)
+        if mw.ndim not in (1, 2):
+            raise ValueError(
+                f"morph_weights must be 1D (M,) for single frame or 2D (F, M) for batched frames, "
+                f"got shape {mw.shape}"
+            )
+
+    pal = np.asarray(palette, dtype=np.float64)
+    if pal.ndim not in (3, 4) or pal.shape[-2:] != (4, 4):
+        raise ValueError(
+            f"palette must have shape (B, 4, 4) or (F, B, 4, 4), got shape {pal.shape}"
+        )
+
+    from ..cuda_accel import evaluate_morph_cuda, skin_mesh_cuda, use_cupy
 
     if use_cupy(device):
-        return skin_mesh_cuda(mesh.vertices, mesh.weights, palette)
+        if morph_weights is not None and mesh.morph_deltas_pos is not None:
+            verts = evaluate_morph_cuda(
+                mesh.vertices, mesh.morph_deltas_pos, morph_weights, device=device
+            )
+        else:
+            verts = mesh.vertices
+        return skin_mesh_cuda(verts, mesh.weights, pal)
 
-    ones = np.ones((mesh.vertices.shape[0], 1), dtype=np.float64)
-    vh = np.concatenate([mesh.vertices, ones], axis=1)
-    posed = np.zeros((mesh.vertices.shape[0], 4), dtype=np.float64)
-    for b in range(palette.shape[0]):
-        w = mesh.weights[:, b]
-        if float(w.max()) < 1e-12:
-            continue
-        posed += w[:, None] * (vh @ palette[b].T)
-    return posed[:, :3]
+    verts, _ = evaluate_morph(mesh, morph_weights)
+    if verts.ndim == 2:
+        # Single frame: (V, 3)
+        ones = np.ones((verts.shape[0], 1), dtype=np.float64)
+        vh = np.concatenate([verts, ones], axis=1)  # (V, 4)
+        if pal.ndim == 4:
+            pal = pal[0]
+        posed = np.zeros((verts.shape[0], 4), dtype=np.float64)
+        for b in range(pal.shape[0]):
+            w = mesh.weights[:, b]
+            if float(w.max()) < 1e-12:
+                continue
+            posed += w[:, None] * (vh @ pal[b].T)
+        return posed[:, :3]
+    elif verts.ndim == 3:
+        # Batched frames: (F, V, 3)
+        F, V, _ = verts.shape
+        ones = np.ones((F, V, 1), dtype=np.float64)
+        vh = np.concatenate([verts, ones], axis=2)  # (F, V, 4)
+        posed = np.zeros((F, V, 4), dtype=np.float64)
+
+        if pal.ndim == 3:
+            # Broadcast single palette (B, 4, 4) across all F frames
+            for b in range(pal.shape[0]):
+                w = mesh.weights[:, b]
+                if float(w.max()) < 1e-12:
+                    continue
+                posed += w[None, :, None] * (vh @ pal[b].T)
+        elif pal.ndim == 4:
+            # Per-frame palette (F, B, 4, 4)
+            if pal.shape[0] != F:
+                raise ValueError(
+                    f"Frame count mismatch: morph verts has {F} frames but palette has {pal.shape[0]} frames"
+                )
+            for b in range(pal.shape[1]):
+                w = mesh.weights[:, b]
+                if float(w.max()) < 1e-12:
+                    continue
+                trans = np.einsum("fvj,fij->fvi", vh, pal[:, b, :, :])
+                posed += w[None, :, None] * trans
+
+        return posed[:, :, :3]
+    raise ValueError(f"Unexpected morphed vertices shape: {verts.shape}")
 
 
 def posed_vertices(

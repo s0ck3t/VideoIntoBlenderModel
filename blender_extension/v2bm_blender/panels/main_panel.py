@@ -52,6 +52,8 @@ class V2BM_PT_main(Panel):
         box.prop(props, "source_type", text=t("source_type"))
         box.prop(props, "source_path", text=t("source_file"))
         box.prop(props, "rig_path", text=t("humanoid_rig"))
+        box.prop(props, "framing", text=t("framing"))
+        box.prop(props, "capture_face", text=t("capture_face"))
         box.prop(props, "generate_preview", text=t("generate_preview"))
         row = box.row()
         row.enabled = not busy

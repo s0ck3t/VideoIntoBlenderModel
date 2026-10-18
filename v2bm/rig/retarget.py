@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .fbx_skeleton import matrix_to_quat_wxyz
 from .kinematics import (
     HumanoidRig,
     anim_from_world_rotation,
@@ -27,6 +28,100 @@ from .kinematics import (
     swing_anim_to_direction,
     world_positions_m,
 )
+
+# Canonical 52 ARKit blendshapes specified by Apple ARKit & Google MediaPipe FaceLandmarker
+CANONICAL_ARKIT_BLENDSHAPES: list[str] = [
+    # Brows (5)
+    "browDownLeft",
+    "browDownRight",
+    "browInnerUp",
+    "browOuterUpLeft",
+    "browOuterUpRight",
+    # Cheeks (3)
+    "cheekPuff",
+    "cheekSquintLeft",
+    "cheekSquintRight",
+    # Eyes (14)
+    "eyeBlinkLeft",
+    "eyeBlinkRight",
+    "eyeLookDownLeft",
+    "eyeLookDownRight",
+    "eyeLookInLeft",
+    "eyeLookInRight",
+    "eyeLookOutLeft",
+    "eyeLookOutRight",
+    "eyeLookUpLeft",
+    "eyeLookUpRight",
+    "eyeSquintLeft",
+    "eyeSquintRight",
+    "eyeWideLeft",
+    "eyeWideRight",
+    # Jaw (4)
+    "jawForward",
+    "jawLeft",
+    "jawOpen",
+    "jawRight",
+    # Mouth (23)
+    "mouthClose",
+    "mouthDimpleLeft",
+    "mouthDimpleRight",
+    "mouthFrownLeft",
+    "mouthFrownRight",
+    "mouthFunnel",
+    "mouthLeft",
+    "mouthLowerDownLeft",
+    "mouthLowerDownRight",
+    "mouthPressLeft",
+    "mouthPressRight",
+    "mouthPucker",
+    "mouthRight",
+    "mouthRollLower",
+    "mouthRollUpper",
+    "mouthShrugLower",
+    "mouthShrugUpper",
+    "mouthSmileLeft",
+    "mouthSmileRight",
+    "mouthStretchLeft",
+    "mouthStretchRight",
+    "mouthUpperUpLeft",
+    "mouthUpperUpRight",
+    # Nose (2)
+    "noseSneerLeft",
+    "noseSneerRight",
+    # Tongue (1)
+    "tongueOut",
+]
+
+# Morph Sensitivity Profile (amplify subtle facial movements)
+DEFAULT_BLENDSHAPE_SENSITIVITIES: dict[str, float] = {
+    # Brows (articulate brow movement clearly)
+    "browDownLeft": 1.20,
+    "browDownRight": 1.20,
+    "browInnerUp": 1.25,
+    "browOuterUpLeft": 1.20,
+    "browOuterUpRight": 1.20,
+    # Cheeks
+    "cheekPuff": 1.25,
+    "cheekSquintLeft": 1.15,
+    "cheekSquintRight": 1.15,
+    # Eyes (blinks preserved without dampening)
+    "eyeBlinkLeft": 1.00,
+    "eyeBlinkRight": 1.00,
+    "eyeWideLeft": 1.10,
+    "eyeWideRight": 1.10,
+    # Jaw
+    "jawOpen": 1.10,
+    "jawForward": 1.10,
+    # Mouth
+    "mouthSmileLeft": 1.15,
+    "mouthSmileRight": 1.15,
+    "mouthDimpleLeft": 1.15,
+    "mouthDimpleRight": 1.15,
+    "mouthFrownLeft": 1.20,
+    "mouthFrownRight": 1.20,
+    "mouthPucker": 1.15,
+    "mouthFunnel": 1.15,
+}
 
 CONTROLLED = (
     "rig:Hips",
@@ -557,6 +652,189 @@ def _hand_rotation(rig: HumanoidRig, world: dict[str, np.ndarray], motion, frame
 FULLY_DETERMINED = frozenset(CONTROLLED)
 
 
+def quat_to_matrix(q: np.ndarray) -> np.ndarray:
+    """Convert wxyz unit quaternion to 3x3 rotation matrix."""
+    q_arr = np.asarray(q, dtype=np.float64)
+    norm = np.linalg.norm(q_arr)
+    if norm > 1e-12:
+        q_arr = q_arr / norm
+    else:
+        return np.eye(3, dtype=np.float64)
+    w, x, y, z = q_arr[0], q_arr[1], q_arr[2], q_arr[3]
+    return np.array([
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+    ], dtype=np.float64)
+
+
+def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
+    """Spherical linear interpolation between two unit quaternions (wxyz)."""
+    dot = float(np.dot(q0, q1))
+    if dot < 0.0:
+        q1 = -q1
+        dot = -dot
+    if dot > 0.9995:
+        res = q0 + t * (q1 - q0)
+        norm = float(np.linalg.norm(res))
+        return res / norm if norm > 1e-12 else q0
+    theta_0 = np.arccos(min(1.0, max(-1.0, dot)))
+    sin_theta_0 = np.sin(theta_0)
+    theta_t = theta_0 * t
+    sin_theta_t = np.sin(theta_t)
+    s0 = np.cos(theta_t) - dot * sin_theta_t / sin_theta_0
+    s1 = sin_theta_t / sin_theta_0
+    res = s0 * q0 + s1 * q1
+    norm = float(np.linalg.norm(res))
+    return res / norm if norm > 1e-12 else q0
+
+
+def build_morph_target_mapping(
+    target_names: list[str],
+    source_names: list[str] = CANONICAL_ARKIT_BLENDSHAPES,
+) -> list[int]:
+    """Map target mesh shape key names to canonical source blendshape indices.
+
+    Supports exact matches, case-insensitive matches, and prefix stripping
+    (e.g. 'rig:', 'blendshape.', 'facs_', 'basis.', 'mesh_').
+    Returns list of source indices of length len(target_names). -1 indicates unmapped.
+    """
+    cleaned_source = {s.lower(): i for i, s in enumerate(source_names)}
+    mapping: list[int] = []
+
+    prefixes = ("rig:", "blendshape.", "facs_", "basis.", "mesh_")
+
+    for tname in target_names:
+        # 1. Exact match
+        if tname in source_names:
+            mapping.append(source_names.index(tname))
+            continue
+
+        # 2. Case-insensitive match
+        t_lower = tname.lower()
+        if t_lower in cleaned_source:
+            mapping.append(cleaned_source[t_lower])
+            continue
+
+        # 3. Strip prefix and match
+        matched_idx = -1
+        for pfx in prefixes:
+            if t_lower.startswith(pfx):
+                stripped = t_lower[len(pfx):]
+                if stripped in cleaned_source:
+                    matched_idx = cleaned_source[stripped]
+                    break
+        mapping.append(matched_idx)
+
+    return mapping
+
+
+def retarget_facial_blendshapes(
+    extracted_blendshapes: np.ndarray,
+    target_morph_names: list[str] | None,
+    source_names: list[str] = CANONICAL_ARKIT_BLENDSHAPES,
+    *,
+    sensitivities: dict[str, float] | None = None,
+) -> np.ndarray | None:
+    """Retarget extracted (T, 52) or (52,) ARKit blendshapes to target mesh shape keys.
+
+    Applies name mapping, sensitivity scaling, and blink snapping.
+    Returns: ndarray of shape (T, M) or (M,) bounded in [0.0, 1.0].
+    """
+    if target_morph_names is None or len(target_morph_names) == 0:
+        return None
+
+    is_1d = extracted_blendshapes.ndim == 1
+    raw = np.atleast_2d(extracted_blendshapes).astype(np.float32)
+    T, S = raw.shape
+    M = len(target_morph_names)
+
+    mapping = build_morph_target_mapping(target_morph_names, source_names)
+    weights = np.zeros((T, M), dtype=np.float32)
+
+    active_sens = DEFAULT_BLENDSHAPE_SENSITIVITIES if sensitivities is None else sensitivities
+
+    idx_blink_l = source_names.index("eyeBlinkLeft") if "eyeBlinkLeft" in source_names else -1
+    idx_blink_r = source_names.index("eyeBlinkRight") if "eyeBlinkRight" in source_names else -1
+
+    for m, src_idx in enumerate(mapping):
+        if src_idx < 0 or src_idx >= S:
+            continue
+        col = raw[:, src_idx].copy()
+        sname = source_names[src_idx]
+        scale = active_sens.get(sname, 1.0)
+        col *= scale
+
+        # Non-linear blink preservation snap for w >= 0.65
+        if src_idx in (idx_blink_l, idx_blink_r):
+            mask = col >= 0.65
+            if np.any(mask):
+                norm_part = (col[mask] - 0.65) / 0.35
+                col[mask] = 0.65 + 0.35 * np.power(norm_part, 0.75)
+
+        weights[:, m] = np.clip(col, 0.0, 1.0)
+
+    return weights[0] if is_1d else weights
+
+
+def retarget_head_neck_orientation(
+    rig: HumanoidRig,
+    world: dict[str, np.ndarray],
+    head_quat_wxyz: np.ndarray,
+    gaze_vector: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Couple extracted head orientation and gaze into rig:Neck (35%) and rig:Head (65%).
+
+    head_quat_wxyz: (4,) unit quaternion wxyz in MediaPipe camera space.
+    gaze_vector: (2, 3) left/right eye gaze displacement vectors.
+    Returns: (r_anim_neck, r_anim_head) 3x3 local rotation matrices.
+    """
+    # Convert head quaternion to rotation matrix in camera space
+    r_cam = quat_to_matrix(head_quat_wxyz)
+
+    # Coordinate transformation: Camera (+X right, +Y down, +Z depth) -> Rig (+X right, +Y up, +Z forward)
+    # C = diag([1.0, -1.0, -1.0])
+    c_mat = np.diag([1.0, -1.0, -1.0])
+    r_head_world = c_mat @ r_cam @ c_mat.T
+
+    # Ocular-cervical coupling: eye gaze micro-rotation
+    if gaze_vector is not None:
+        gx = 0.5 * (float(gaze_vector[0, 0]) + float(gaze_vector[1, 0]))
+        gy = 0.5 * (float(gaze_vector[0, 1]) + float(gaze_vector[1, 1]))
+        gz = max(0.5 * (float(gaze_vector[0, 2]) + float(gaze_vector[1, 2])), 0.1)
+        yaw_micro = float(np.arctan2(gx, gz) * 0.12)
+        pitch_micro = float(np.arctan2(-gy, gz) * 0.10)
+        cy, sy = np.cos(yaw_micro), np.sin(yaw_micro)
+        cp, sp = np.cos(pitch_micro), np.sin(pitch_micro)
+        r_micro = np.array([
+            [cy, 0.0, sy],
+            [-sp * sy, cp, sp * cy],
+            [-cp * sy, -sp, cp * cy],
+        ], dtype=np.float64)
+        r_head_world = r_head_world @ r_micro
+
+    # Relative rotation with respect to chest (rig:Spine2)
+    bone_neck = rig.bones["rig:Neck"]
+    bone_head = rig.bones["rig:Head"]
+    r_spine2 = world.get(bone_neck.parent, np.eye(4))[:3, :3] if bone_neck.parent else np.eye(3)
+
+    r_cervical = r_spine2.T @ r_head_world
+    q_cervical = matrix_to_quat_wxyz(r_cervical)
+
+    # Distribute: 35% neck, 65% head
+    q_ident = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    q_neck = _slerp(q_ident, q_cervical, 0.35)
+    q_head = _slerp(q_ident, q_cervical, 0.65)
+
+    r_neck_world = r_spine2 @ quat_to_matrix(q_neck)
+    r_head_final = r_neck_world @ quat_to_matrix(q_head)
+
+    r_anim_neck = anim_from_world_rotation(bone_neck, r_spine2, r_neck_world)
+    r_anim_head = anim_from_world_rotation(bone_head, r_neck_world, r_head_final)
+
+    return r_anim_neck, r_anim_head
+
+
 def retarget_one_frame(
     rig: HumanoidRig,
     motion,
@@ -606,6 +884,13 @@ def retarget_one_frame(
             )
             commit(bone_name, rotation)
 
+    has_head_quat = (
+        getattr(motion, "head_rotation_quat", None) is not None
+        and len(motion.head_rotation_quat) > frame
+        and motion.head_rotation_quat[frame] is not None
+        and not np.allclose(motion.head_rotation_quat[frame], 0.0)
+    )
+
     commit("rig:Hips", _hips_rotation(rig, motion, frame))
     if clavicles:
         apply_swings(
@@ -615,10 +900,25 @@ def retarget_one_frame(
             }
         )
         commit("rig:Spine2", _spine2_chest_rotation(rig, fk(), motion, frame))
+
+        if has_head_quat:
+            gv = getattr(motion, "gaze_vectors", None)
+            gaze = gv[frame] if gv is not None and len(gv) > frame else None
+            r_neck, r_head = retarget_head_neck_orientation(
+                rig, fk(), motion.head_rotation_quat[frame], gaze
+            )
+            commit("rig:Neck", r_neck)
+            commit("rig:Head", r_head)
+        else:
+            apply_swings(
+                {
+                    "rig:Neck": SWING_TARGETS["rig:Neck"],
+                    "rig:Head": SWING_TARGETS["rig:Head"],
+                }
+            )
+
         apply_swings(
             {
-                "rig:Neck": SWING_TARGETS["rig:Neck"],
-                "rig:Head": SWING_TARGETS["rig:Head"],
                 "rig:LeftShoulder": SWING_TARGETS["rig:LeftShoulder"],
                 "rig:LeftArm": SWING_TARGETS["rig:LeftArm"],
                 "rig:RightShoulder": SWING_TARGETS["rig:RightShoulder"],
@@ -631,12 +931,21 @@ def retarget_one_frame(
         commit("rig:RightHand", _hand_rotation(rig, fk(), motion, frame, "Right"))
     else:
         apply_swings(SWING_TARGETS_NO_CLAVICLE)
-        apply_swings(
-            {
-                "rig:Neck": SWING_TARGETS["rig:Neck"],
-                "rig:Head": SWING_TARGETS["rig:Head"],
-            }
-        )
+        if has_head_quat:
+            gv = getattr(motion, "gaze_vectors", None)
+            gaze = gv[frame] if gv is not None and len(gv) > frame else None
+            r_neck, r_head = retarget_head_neck_orientation(
+                rig, fk(), motion.head_rotation_quat[frame], gaze
+            )
+            commit("rig:Neck", r_neck)
+            commit("rig:Head", r_head)
+        else:
+            apply_swings(
+                {
+                    "rig:Neck": SWING_TARGETS["rig:Neck"],
+                    "rig:Head": SWING_TARGETS["rig:Head"],
+                }
+            )
         commit("rig:LeftForeArm", _forearm_rotation(rig, fk(), motion, frame, "Left", prev_r_anim))
         commit("rig:RightForeArm", _forearm_rotation(rig, fk(), motion, frame, "Right", prev_r_anim))
         commit("rig:LeftHand", _hand_rotation(rig, fk(), motion, frame, "Left"))

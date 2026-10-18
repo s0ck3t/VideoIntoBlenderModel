@@ -87,6 +87,7 @@ class RetargetedAnimation:
     human_pos: list[dict[str, np.ndarray]]
     twist_events: list[dict] = field(default_factory=list)
     sign_events: list[dict] = field(default_factory=list)
+    morph_weights: np.ndarray | None = None  # (N, M) float32 in [0.0, 1.0]
 
     @property
     def n(self) -> int:
@@ -227,6 +228,7 @@ def build_animation(
     mapping: RigMapping,
     frames: list[int],
     *,
+    target_morph_names: list[str] | None = None,
     verbose: bool = True,
     device: str = "cpu",
 ) -> RetargetedAnimation:
@@ -335,6 +337,22 @@ def build_animation(
         anim.rig_skel_pos.append(mix_pos)
         anim.rig_pos.append(rig_pos)
 
+    # Retarget facial blendshapes if present in motion and target names provided
+    retargeted_morphs = None
+    if getattr(motion, "face_blendshapes", None) is not None and target_morph_names is not None:
+        from .retarget import retarget_facial_blendshapes
+
+        bs = motion.face_blendshapes
+        if bs.ndim == 2:
+            if max(frames) < len(bs):
+                bs = bs[frames]
+            elif len(bs) == len(frames):
+                pass
+            else:
+                bs = bs[:len(frames)]
+        retargeted_morphs = retarget_facial_blendshapes(bs, target_morph_names)
+    anim.morph_weights = retargeted_morphs
+
     return anim
 
 
@@ -356,12 +374,14 @@ def skin_frames(
         world = forward_kinematics(
             asset.rig, anim.r_anim_rig[i], hips_translation_cm=anim.hips_cm_rig[i]
         )
-        out.append(
-            [
-                skin_mesh(mesh, bone_palette(world, mesh, asset.rig.order), device=device) * scale
-                for mesh in asset.meshes
-            ]
-        )
+        frame_verts = []
+        mw = anim.morph_weights[i] if anim.morph_weights is not None else None
+        for mesh in asset.meshes:
+            mesh_mw = mw if getattr(mesh, "morph_deltas_pos", None) is not None else None
+            palette = bone_palette(world, mesh, asset.rig.order)
+            v = skin_mesh(mesh, palette, morph_weights=mesh_mw, device=device) * scale
+            frame_verts.append(v)
+        out.append(frame_verts)
     return out
 
 

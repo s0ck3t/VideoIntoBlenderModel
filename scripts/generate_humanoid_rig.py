@@ -100,10 +100,15 @@ def compute_surface_skin_weights(
 
         # 2. Head & Neck column (yi >= 144.0 cm and abs_x <= 6.5 cm)
         if yi >= 144.0 and abs_x <= 6.5:
+            # Anterior face & jaw (yi >= 158.0 cm and zi >= 2.0 cm) are rigidly bound 100% to rig:Head,
+            # mathematically guaranteeing zero mesh tearing under combined skeletal skinning and facial morphing
             if yi >= 158.0:
-                t = float(smoothstep(158.0, 164.0, yi))
-                weights["rig:Head"][i] = t
-                weights["rig:Neck"][i] = 1.0 - t
+                if zi >= 2.0:
+                    weights["rig:Head"][i] = 1.0
+                else:
+                    t = float(smoothstep(158.0, 164.0, yi))
+                    weights["rig:Head"][i] = t
+                    weights["rig:Neck"][i] = 1.0 - t
             elif yi >= 152.0:
                 # Pure Neck buffer zone [152.0, 158.0] separating Spine2 from Head
                 weights["rig:Neck"][i] = 1.0
@@ -116,9 +121,9 @@ def compute_surface_skin_weights(
                 weights["rig:Spine2"][i] = 1.0 - m_neck
             continue
 
-        # 3. Head top (yi >= 158.0 cm, for any lateral head points)
+        # 3. Head top and lateral head (yi >= 158.0 cm)
         if yi >= 158.0:
-            if yi >= 164.0:
+            if zi >= 2.0 or yi >= 164.0:
                 weights["rig:Head"][i] = 1.0
             else:
                 t = float(smoothstep(158.0, 164.0, yi))
@@ -183,6 +188,112 @@ def compute_surface_skin_weights(
             weights["rig:Hips"][i] = 1.0
 
     return weights
+
+
+def evaluate_gaussian_field(
+    coords: np.ndarray,
+    center: tuple[float, float, float],
+    radii: tuple[float, float, float],
+    displacement: tuple[float, float, float],
+) -> np.ndarray:
+    """Evaluate 3D Gaussian displacement vector field."""
+    cx, cy, cz = center
+    rx, ry, rz = radii
+    dx, dy, dz = displacement
+    x, y, z = coords[:, 0], coords[:, 1], coords[:, 2]
+    d_sq = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + ((z - cz) / rz) ** 2
+    w = np.exp(-0.5 * d_sq)
+    w = np.where((d_sq > 9.0) | (y < 158.0) | (z < 3.0), 0.0, w)
+    delta = np.zeros_like(coords, dtype=np.float32)
+    delta[:, 0] = w * dx
+    delta[:, 1] = w * dy
+    delta[:, 2] = w * dz
+    return delta
+
+
+ARKIT_DEFORMERS: dict[str, tuple] = {
+    # --- Brows (5) ---
+    "browDownLeft": ("single", (2.8, 171.2, 8.0), (2.5, 1.8, 2.0), (-0.15, -0.65, 0.15)),
+    "browDownRight": ("single", (-2.8, 171.2, 8.0), (2.5, 1.8, 2.0), (0.15, -0.65, 0.15)),
+    "browInnerUp": (
+        "dual",
+        (1.4, 171.4, 8.2),
+        (1.6, 1.6, 2.0),
+        (0.0, 0.70, 0.10),
+        (-1.4, 171.4, 8.2),
+        (1.6, 1.6, 2.0),
+        (0.0, 0.70, 0.10),
+    ),
+    "browOuterUpLeft": ("single", (4.0, 171.0, 7.6), (2.0, 1.6, 2.0), (0.10, 0.65, 0.05)),
+    "browOuterUpRight": ("single", (-4.0, 171.0, 7.6), (2.0, 1.6, 2.0), (-0.10, 0.65, 0.05)),
+
+    # --- Cheeks (3) ---
+    "cheekPuff": (
+        "dual",
+        (4.5, 164.5, 7.0),
+        (2.5, 2.5, 2.5),
+        (0.80, 0.0, 0.60),
+        (-4.5, 164.5, 7.0),
+        (2.5, 2.5, 2.5),
+        (-0.80, 0.0, 0.60),
+    ),
+    "cheekSquintLeft": ("single", (3.6, 165.5, 7.5), (2.0, 1.8, 2.0), (-0.10, 0.55, 0.20)),
+    "cheekSquintRight": ("single", (-3.6, 165.5, 7.5), (2.0, 1.8, 2.0), (0.10, 0.55, 0.20)),
+
+    # --- Eyes (14) ---
+    "eyeBlinkLeft": ("single", (3.2, 168.4, 7.9), (1.8, 1.2, 1.5), (0.0, -0.80, -0.15)),
+    "eyeBlinkRight": ("single", (-3.2, 168.4, 7.9), (1.8, 1.2, 1.5), (0.0, -0.80, -0.15)),
+    "eyeLookDownLeft": ("single", (3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (0.0, -0.35, -0.05)),
+    "eyeLookDownRight": ("single", (-3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (0.0, -0.35, -0.05)),
+    "eyeLookInLeft": ("single", (3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (-0.35, 0.0, -0.05)),
+    "eyeLookInRight": ("single", (-3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (0.35, 0.0, -0.05)),
+    "eyeLookOutLeft": ("single", (3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (0.35, 0.0, -0.05)),
+    "eyeLookOutRight": ("single", (-3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (-0.35, 0.0, -0.05)),
+    "eyeLookUpLeft": ("single", (3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (0.0, 0.35, -0.05)),
+    "eyeLookUpRight": ("single", (-3.2, 168.0, 8.0), (1.4, 1.4, 1.4), (0.0, 0.35, -0.05)),
+    "eyeSquintLeft": ("single", (3.2, 167.3, 7.8), (1.6, 1.0, 1.5), (0.0, 0.45, 0.10)),
+    "eyeSquintRight": ("single", (-3.2, 167.3, 7.8), (1.6, 1.0, 1.5), (0.0, 0.45, 0.10)),
+    "eyeWideLeft": ("single", (3.2, 168.8, 7.9), (1.8, 1.2, 1.5), (0.0, 0.55, 0.10)),
+    "eyeWideRight": ("single", (-3.2, 168.8, 7.9), (1.8, 1.2, 1.5), (0.0, 0.55, 0.10)),
+
+    # --- Jaw (4) ---
+    "jawForward": ("single", (0.0, 159.5, 7.2), (3.8, 3.2, 3.5), (0.0, 0.10, 0.85)),
+    "jawLeft": ("single", (0.0, 159.5, 7.2), (3.8, 3.2, 3.5), (0.70, -0.15, 0.0)),
+    "jawOpen": ("single", (0.0, 159.5, 7.2), (4.2, 3.5, 3.8), (0.0, -1.35, 0.35)),
+    "jawRight": ("single", (0.0, 159.5, 7.2), (3.8, 3.2, 3.5), (-0.70, -0.15, 0.0)),
+
+    # --- Mouth (23) ---
+    "mouthClose": ("single", (0.0, 161.4, 8.4), (2.5, 1.5, 1.8), (0.0, 0.65, 0.10)),
+    "mouthDimpleLeft": ("single", (2.6, 162.0, 8.0), (1.5, 1.5, 1.5), (0.40, 0.10, -0.50)),
+    "mouthDimpleRight": ("single", (-2.6, 162.0, 8.0), (1.5, 1.5, 1.5), (-0.40, 0.10, -0.50)),
+    "mouthFrownLeft": ("single", (2.4, 162.0, 8.0), (1.6, 1.5, 1.5), (-0.10, -0.70, 0.10)),
+    "mouthFrownRight": ("single", (-2.4, 162.0, 8.0), (1.6, 1.5, 1.5), (0.10, -0.70, 0.10)),
+    "mouthFunnel": ("single", (0.0, 162.1, 8.5), (2.8, 2.0, 2.2), (0.0, 0.0, 0.80)),
+    "mouthLeft": ("single", (0.0, 162.1, 8.5), (3.0, 2.0, 2.2), (0.75, 0.0, 0.0)),
+    "mouthLowerDownLeft": ("single", (1.4, 161.4, 8.4), (1.5, 1.4, 1.6), (0.0, -0.75, 0.10)),
+    "mouthLowerDownRight": ("single", (-1.4, 161.4, 8.4), (1.5, 1.4, 1.6), (0.0, -0.75, 0.10)),
+    "mouthPressLeft": ("single", (1.5, 162.1, 8.5), (1.8, 1.2, 1.5), (0.0, 0.0, -0.45)),
+    "mouthPressRight": ("single", (-1.5, 162.1, 8.5), (1.8, 1.2, 1.5), (0.0, 0.0, -0.45)),
+    "mouthPucker": ("single", (0.0, 162.1, 8.5), (2.2, 1.8, 2.0), (0.0, 0.0, 1.05)),
+    "mouthRight": ("single", (0.0, 162.1, 8.5), (3.0, 2.0, 2.2), (-0.75, 0.0, 0.0)),
+    "mouthRollLower": ("single", (0.0, 161.4, 8.4), (2.2, 1.2, 1.5), (0.0, 0.25, -0.55)),
+    "mouthRollUpper": ("single", (0.0, 162.8, 8.6), (2.2, 1.2, 1.5), (0.0, -0.25, -0.55)),
+    "mouthShrugLower": ("single", (0.0, 161.2, 8.3), (2.2, 1.5, 1.8), (0.0, 0.65, 0.35)),
+    "mouthShrugUpper": ("single", (0.0, 162.8, 8.6), (2.2, 1.5, 1.8), (0.0, 0.65, 0.35)),
+    "mouthSmileLeft": ("single", (2.5, 162.1, 8.1), (1.8, 1.6, 1.6), (0.65, 0.75, -0.30)),
+    "mouthSmileRight": ("single", (-2.5, 162.1, 8.1), (1.8, 1.6, 1.6), (-0.65, 0.75, -0.30)),
+    "mouthStretchLeft": ("single", (2.5, 162.1, 8.1), (1.8, 1.5, 1.6), (0.85, 0.0, -0.15)),
+    "mouthStretchRight": ("single", (-2.5, 162.1, 8.1), (1.8, 1.5, 1.6), (-0.85, 0.0, -0.15)),
+    "mouthUpperUpLeft": ("single", (1.4, 162.8, 8.6), (1.6, 1.4, 1.6), (0.0, 0.75, 0.10)),
+    "mouthUpperUpRight": ("single", (-1.4, 162.8, 8.6), (1.6, 1.4, 1.6), (0.0, 0.75, 0.10)),
+
+    # --- Nose (2) ---
+    "noseSneerLeft": ("single", (1.2, 165.0, 8.8), (1.5, 1.5, 1.5), (0.10, 0.55, 0.15)),
+    "noseSneerRight": ("single", (-1.2, 165.0, 8.8), (1.5, 1.5, 1.5), (-0.10, 0.55, 0.15)),
+
+    # --- Tongue (1) ---
+    "tongueOut": ("single", (0.0, 162.1, 8.2), (1.5, 1.0, 1.5), (0.0, -0.20, 0.90)),
+}
 
 
 def build_humanoid_rig_fbx(output_fbx: Path, log_file: Path | None = None) -> bool:
@@ -303,6 +414,23 @@ def build_humanoid_rig_fbx(output_fbx: Path, log_file: Path | None = None) -> bo
     parts.append(create_body_part("sphere", (0.0, 168.0, 1.0), (8.0, 10.0, 8.5)))
     parts.append(create_body_part("sphere", (0.0, 161.0, 3.0), (5.5, 6.0, 6.0)))
     parts.append(create_body_part("cylinder", (0.0, 154.0, 0.0), (4.5, 4.5, 12.0), rot=rot_y))
+
+    # Facial Feature Primitives (Eyes, Brows, Cheeks, Nose, Lips, Chin)
+    parts.append(create_body_part("sphere", (2.8, 171.2, 8.0), (2.2, 0.8, 1.2)))    # Brow Arch Left
+    parts.append(create_body_part("sphere", (-2.8, 171.2, 8.0), (2.2, 0.8, 1.2)))   # Brow Arch Right
+    parts.append(create_body_part("sphere", (3.2, 168.0, 7.8), (1.5, 1.1, 1.3)))    # Eye Left
+    parts.append(create_body_part("sphere", (-3.2, 168.0, 7.8), (1.5, 1.1, 1.3)))   # Eye Right
+    parts.append(create_body_part("sphere", (4.5, 164.5, 7.0), (1.8, 2.0, 1.8)))    # Cheek Left
+    parts.append(create_body_part("sphere", (-4.5, 164.5, 7.0), (1.8, 2.0, 1.8)))   # Cheek Right
+    parts.append(create_body_part("cylinder", (0.0, 166.5, 8.5), (0.9, 0.9, 3.5), rot=rot_y))  # Nose Bridge
+    parts.append(create_body_part("sphere", (0.0, 164.5, 9.6), (1.1, 1.0, 1.1)))    # Nose Tip
+    parts.append(create_body_part("sphere", (1.2, 164.2, 9.0), (0.7, 0.6, 0.7)))    # Nostril Left
+    parts.append(create_body_part("sphere", (-1.2, 164.2, 9.0), (0.7, 0.6, 0.7)))   # Nostril Right
+    parts.append(create_body_part("sphere", (0.0, 162.8, 8.6), (2.5, 0.7, 1.0)))    # Upper Lip
+    parts.append(create_body_part("sphere", (0.0, 161.4, 8.4), (2.3, 0.8, 1.0)))    # Lower Lip
+    parts.append(create_body_part("sphere", (2.5, 162.1, 8.0), (0.6, 0.6, 0.6)))    # Mouth Corner Left
+    parts.append(create_body_part("sphere", (-2.5, 162.1, 8.0), (0.6, 0.6, 0.6)))   # Mouth Corner Right
+    parts.append(create_body_part("sphere", (0.0, 159.0, 7.4), (2.2, 1.8, 2.0)))    # Chin Prominence
 
     # Torso (Hips to Shoulders: Y in [94, 144])
     parts.append(create_body_part("sphere", (0.0, 140.0, 0.5), (15.5, 12.0, 10.5)))
@@ -448,6 +576,32 @@ def build_humanoid_rig_fbx(output_fbx: Path, log_file: Path | None = None) -> bo
         bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.02)
         bpy.ops.object.mode_set(mode="OBJECT")
     log("Performed conformal UV smart project unwrapping on both meshes", log_file)
+
+    # 5b. Generate Basis and 52 canonical ARKit Shape Keys on Alpha_Surface
+    basis_key = surface_obj.shape_key_add(name="Basis", from_mix=False)
+    n_surf_verts = len(surface_obj.data.vertices)
+    surf_coords = np.empty((n_surf_verts, 3), dtype=np.float32)
+    surface_obj.data.vertices.foreach_get("co", surf_coords.reshape(-1))
+
+    # Canonical ARKit shape key list to guarantee strict creation sequence
+    canonical_order = list(ARKIT_DEFORMERS.keys())
+    assert len(canonical_order) == 52, f"Expected 52 ARKit keys, got {len(canonical_order)}"
+
+    for shape_name in canonical_order:
+        spec = ARKIT_DEFORMERS[shape_name]
+        sk = surface_obj.shape_key_add(name=shape_name, from_mix=False)
+        kind = spec[0]
+        if kind == "single":
+            _, c, r, d = spec
+            delta = evaluate_gaussian_field(surf_coords, c, r, d)
+        elif kind == "dual":
+            _, c_l, r_l, d_l, c_r, r_r, d_r = spec
+            delta = evaluate_gaussian_field(surf_coords, c_l, r_l, d_l) + evaluate_gaussian_field(
+                surf_coords, c_r, r_r, d_r
+            )
+        morphed = surf_coords + delta
+        sk.data.foreach_set("co", morphed.reshape(-1))
+    log("Generated 52 canonical ARKit shape keys on Alpha_Surface in strict canonical sequence", log_file)
 
     # 6. Studio Gradient Textures & PBR Materials
     w_tex, h_tex = 512, 512

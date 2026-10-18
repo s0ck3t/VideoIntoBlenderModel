@@ -17,6 +17,7 @@ import numpy as np
 
 from .fbx_skeleton import matrix_to_quat_wxyz
 from .kinematics import continue_quaternion, local_matrix
+from .retarget import CANONICAL_ARKIT_BLENDSHAPES
 from .skinned_mesh import HumanoidRigAsset
 
 _GLTF_MAGIC = 0x46546C67
@@ -141,16 +142,18 @@ def _split_mesh_uvs(
     )
 
 
-def write_glb(
+def export_character_animation_glb(
     path: Path,
     asset: HumanoidRigAsset,
     r_anim_frames: list[dict[str, np.ndarray]],
     hips_cm_frames: list[np.ndarray],
     fps: float,
     *,
+    morph_weights_frames: list[np.ndarray] | np.ndarray | None = None,
+    morph_target_names: list[str] | None = None,
     device: str = "cpu",
 ) -> Path:
-    """Skinned character + clip → a single `.glb` file."""
+    """Skinned character + clip + morph targets -> a single `.glb` file."""
     from ..cuda_accel import accumulate_vertex_colors_cuda, use_cupy
 
     rig = asset.rig
@@ -208,7 +211,8 @@ def write_glb(
         nodes.append(node)
 
     mesh_node = len(nodes)
-    nodes.append({"name": "skinned_mesh", "mesh": 0, "skin": 0})
+    mesh_node_dict = {"name": "skinned_mesh", "mesh": 0, "skin": 0}
+    nodes.append(mesh_node_dict)
 
     ibm = np.stack(
         [_scale_affine(asset.meshes[0].ibm[i], scale) for i in range(n_bones)],
@@ -224,6 +228,9 @@ def write_glb(
 
     primitives = []
     materials = []
+    n_morph_targets = 0
+    resolved_target_names: list[str] = []
+
     for mesh in asset.meshes:
         color = np.clip(np.asarray(mesh.color, dtype=np.float64).reshape(3), 0, 1)
         is_joint = "joint" in mesh.name.lower()
@@ -260,6 +267,46 @@ def write_glb(
 
         if has_uvs:
             attrs["TEXCOORD_0"] = accessor(split_uvs, "VEC2", 5126, target=34962)
+
+        prim_dict: dict = {
+            "attributes": attrs,
+            "indices": accessor(faces.reshape(-1), "SCALAR", 5125, target=34963),
+            "material": len(materials),
+        }
+
+        # Build morph displacement delta accessors if present on this mesh
+        if getattr(mesh, "morph_deltas_pos", None) is not None:
+            M = mesh.morph_deltas_pos.shape[0]
+            n_morph_targets = M
+            resolved_target_names = (
+                morph_target_names
+                or getattr(mesh, "morph_target_names", None)
+                or CANONICAL_ARKIT_BLENDSHAPES[:M]
+            )
+            targets_list = []
+            for m in range(M):
+                if v_map is not None:
+                    d_pos = (mesh.morph_deltas_pos[m, v_map] * scale).astype(np.float32)
+                    d_norm = (
+                        mesh.morph_deltas_norm[m, v_map].astype(np.float32)
+                        if getattr(mesh, "morph_deltas_norm", None) is not None
+                        else np.zeros_like(d_pos)
+                    )
+                else:
+                    d_pos = (mesh.morph_deltas_pos[m] * scale).astype(np.float32)
+                    d_norm = (
+                        mesh.morph_deltas_norm[m].astype(np.float32)
+                        if getattr(mesh, "morph_deltas_norm", None) is not None
+                        else np.zeros_like(d_pos)
+                    )
+
+                targets_list.append({
+                    "POSITION": accessor(d_pos, "VEC3", 5126, target=34962),
+                    "NORMAL": accessor(d_norm, "VEC3", 5126, target=34962),
+                })
+            prim_dict["targets"] = targets_list
+
+        primitives.append(prim_dict)
 
         mat_def: dict = {
             "name": mesh.name,
@@ -334,11 +381,11 @@ def write_glb(
 
         materials.append(mat_def)
 
-        primitives.append({
-            "attributes": attrs,
-            "indices": accessor(faces.reshape(-1), "SCALAR", 5125, target=34963),
-            "material": len(materials) - 1,
-        })
+    mesh_dict: dict = {"name": "character", "primitives": primitives}
+    if n_morph_targets > 0:
+        mesh_dict["weights"] = [0.0] * n_morph_targets
+        mesh_dict["extras"] = {"targetNames": list(resolved_target_names)}
+        mesh_node_dict["weights"] = [0.0] * n_morph_targets
 
     n = len(r_anim_frames)
     times = (np.arange(n, dtype=np.float32) / max(float(fps), 1e-6))
@@ -372,12 +419,27 @@ def write_glb(
         sid = add_sampler(rot_tracks[name], "VEC4")
         channels.append({"sampler": sid, "target": {"node": bone_index[name], "path": "rotation"}})
 
+    # Morph Animation Channel
+    if morph_weights_frames is not None and n_morph_targets > 0:
+        mw_arr = np.asarray(morph_weights_frames, dtype=np.float32)
+        if mw_arr.shape[0] != n or mw_arr.shape[1] != n_morph_targets:
+            raise ValueError(
+                f"morph_weights_frames shape {mw_arr.shape} does not match (N={n}, M={n_morph_targets})"
+            )
+        weights_flat = mw_arr.reshape(-1)
+        w_acc = accessor(weights_flat, "SCALAR", 5126)
+        anim_samplers.append({"input": time_acc, "output": w_acc, "interpolation": "LINEAR"})
+        channels.append({
+            "sampler": len(anim_samplers) - 1,
+            "target": {"node": mesh_node, "path": "weights"},
+        })
+
     gltf = {
         "asset": {"version": "2.0", "generator": "v2bm"},
         "scene": 0,
         "scenes": [{"nodes": [bone_index[rig.root], mesh_node]}],
         "nodes": nodes,
-        "meshes": [{"name": "character", "primitives": primitives}],
+        "meshes": [mesh_dict],
         "materials": materials,
         "skins": [{
             "name": "rigs",
@@ -413,3 +475,7 @@ def write_glb(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(header + json_chunk + bin_chunk)
     return path
+
+
+# Backwards compatibility alias
+write_glb = export_character_animation_glb

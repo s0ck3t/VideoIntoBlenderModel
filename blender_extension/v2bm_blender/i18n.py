@@ -191,6 +191,29 @@ _add(
     ar="هيكل Humanoid FBX",
 )
 _add(
+    "capture_face",
+    en="Capture Face Expressions",
+    **{"zh-CN": "捕捉面部表情"},
+    ko="얼굴 표정 캡처",
+    ja="表情キャプチャ",
+    de="Gesichtsausdrücke erfassen",
+    ru="Захват мимики лица",
+    ar="التقاط تعابير الوجه",
+)
+_add(
+    "framing",
+    en="Framing",
+    **{"zh-CN": "镜头景别"},
+    ko="프레이밍",
+    ja="フレーミング",
+    de="Bildausschnitt",
+    ru="Кадрирование",
+    ar="تأطير اللقطة",
+)
+_add("framing_auto", en="Auto", **{"zh-CN": "自动"}, ko="자동", ja="自動", de="Automatisch", ru="Авто", ar="تلقائي")
+_add("framing_full_body", en="Full Body", **{"zh-CN": "全身"}, ko="전신", ja="全身", de="Ganzkörper", ru="В полный рост", ar="كامل الجسم")
+_add("framing_portrait", en="Portrait", **{"zh-CN": "半身/特写"}, ko="인물/클로즈업", ja="バストアップ/クローズアップ", de="Porträt", ru="Портрет", ar="لقطة مقربة / رأس")
+_add(
     "generate_preview",
     en="Generate Preview Videos",
     **{"zh-CN": "生成预览视频"},

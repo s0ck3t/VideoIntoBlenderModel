@@ -58,6 +58,21 @@ class V2BMProperties(PropertyGroup):
         name="Device",
         items=_device_items,
     )
+    framing: EnumProperty(
+        name="Framing",
+        description="Camera framing expectation (auto, full body, or portrait)",
+        items=(
+            ("auto", "Auto", "Auto-detect performer framing"),
+            ("full_body", "Full Body", "Expect head-to-toe performer"),
+            ("portrait", "Portrait", "Expect head and shoulders close-up"),
+        ),
+        default="auto",
+    )
+    capture_face: BoolProperty(
+        name="Capture Face Expressions",
+        description="Extract and retarget 52 ARKit facial blendshapes",
+        default=True,
+    )
     generate_preview: BoolProperty(
         name="Generate Preview Videos",
         description="Also render preview videos/images (slower)",
