@@ -74,23 +74,25 @@ def compute_planar_speed(pos: np.ndarray, dt: float) -> np.ndarray:
 def detect_stance_phases(
     ankle_positions: np.ndarray,
     fps: float = 30.0,
-    speed_thresh: float = 0.15,
-    height_thresh: float = 0.15,
+    speed_thresh: float = 0.45,
+    height_thresh: float = 0.20,
     min_stance_frames: int = 3,
     *,
     vel_threshold: float | None = None,
     height_threshold: float | None = None,
     min_duration_frames: int | None = None,
 ) -> np.ndarray:
-    """Detect active stance contact phases from world ankle positions.
+    """Detect active stance contact phases from world foot and ankle positions.
 
     Applies vertical height and horizontal planar speed thresholds followed by
-    morphological filtering to eliminate transient false contacts.
+    morphological filtering to eliminate transient false contacts. Supports both
+    single-joint ankle positions and multi-point contact clearance trajectories.
 
     Parameters
     ----------
     ankle_positions : np.ndarray
-        Array of shape (T, 2, 3) for [left, right] ankles, or (T, 3) for a single foot.
+        Array of shape (T, 2, 3) for [left, right] ankles, (T, 2, K, 3) for multi-point
+        foot contact clearance, or (T, 3) for a single foot.
     fps : float
         Sampling frequency in frames per second.
     speed_thresh : float
@@ -119,6 +121,28 @@ def detect_stance_phases(
         min_stance_frames = min_duration_frames
 
     arr = np.asarray(ankle_positions, dtype=np.float64)
+    if arr.ndim == 4:
+        n_frames, n_feet, n_pts, _ = arr.shape
+        dt = 1.0 / fps if fps > 0.0 else 1.0 / 30.0
+        stance_mask = np.zeros((n_frames, n_feet), dtype=bool)
+        for s in range(n_feet):
+            y_contact = np.min(arr[:, s, :, 1], axis=1)
+            v_xz = np.min(compute_planar_speed(arr[:, s, :, :], dt), axis=1)
+            raw_contact = (y_contact <= height_thresh) & (v_xz <= speed_thresh)
+            filtered = raw_contact.copy()
+            t = 0
+            while t < n_frames:
+                if filtered[t]:
+                    start = t
+                    while t < n_frames and filtered[t]:
+                        t += 1
+                    if t - start < min_stance_frames:
+                        filtered[start:t] = False
+                else:
+                    t += 1
+            stance_mask[:, s] = filtered
+        return stance_mask
+
     single_foot = (arr.ndim == 2)
     if single_foot:
         arr = arr[:, np.newaxis, :]
@@ -391,11 +415,17 @@ def solve_leg_ik_rotations(
             np.array([0.0, 1.0, 0.0]),
         )
 
-    return {
+    res = {
         b_up_name: r_up_anim,
         b_leg_name: r_leg_anim,
         b_foot_name: r_foot_anim,
     }
+    b_toe_name = f"rig:{side_cap}ToeBase"
+    if b_toe_name in skel.bones and motion is not None:
+        from .retarget import _toe_rotation
+        res[b_toe_name] = _toe_rotation(skel, world_temp, motion, frame, side_cap)
+
+    return res
 
 
 def apply_foot_ik(
@@ -439,16 +469,48 @@ def apply_foot_ik(
     if "rig:LeftUpLeg" not in skel.bones or "rig:RightUpLeg" not in skel.bones:
         return r_anim_seq
 
-    # 1. Forward kinematics before IK to record initial ankle positions
-    ankle_positions = np.zeros((n_frames, 2, 3), dtype=np.float64)
-    for t in range(n_frames):
-        world_t = forward_kinematics(skel, r_anim_seq[t], hips_translation_cm=hips_cm_seq[t])
-        pos_t = world_positions_m(skel, world_t)
-        ankle_positions[t, 0] = pos_t["rig:LeftFoot"]
-        ankle_positions[t, 1] = pos_t["rig:RightFoot"]
+    # 1. Forward kinematics before IK with pre-aligned character height to ground baseline
+    aligned_hips_cm = [h.copy() for h in hips_cm_seq]
+    rest_skel_pos = world_positions_m(skel, forward_kinematics(skel, {}))
+    rest_sole_skel_m = max(0.0, min(float(p[1]) for p in rest_skel_pos.values()))
 
-    # 2. Detect stance phases
-    stance_mask = detect_stance_phases(ankle_positions, fps=fps)
+    # Compute airborne lift if available to preserve flight elevation
+    lift_seq = np.zeros(n_frames, dtype=np.float64)
+    if motion is not None and getattr(motion, "screen_landmarks", None) is not None:
+        from .animation import _compute_airborne_lift_m
+        lift_res = _compute_airborne_lift_m(motion, list(range(n_frames)))
+        lift_seq = lift_res[0] if isinstance(lift_res, tuple) else lift_res
+
+    contact_positions = np.zeros((n_frames, 2, 3), dtype=np.float64)
+    ankle_positions = np.zeros((n_frames, 2, 3), dtype=np.float64)
+
+    for t in range(n_frames):
+        world_zero = forward_kinematics(skel, r_anim_seq[t], hips_translation_cm=np.zeros(3))
+        pos_zero = world_positions_m(skel, world_zero)
+        min_rel_y = min(float(p[1]) for p in pos_zero.values())
+        lift_m = float(lift_seq[t]) if len(lift_seq) > t else 0.0
+        aligned_hips_cm[t][1] = (-min_rel_y + rest_sole_skel_m + lift_m) / skel.meters_per_unit
+
+        world_t = forward_kinematics(skel, r_anim_seq[t], hips_translation_cm=aligned_hips_cm[t])
+        pos_t = world_positions_m(skel, world_t)
+
+        for s_idx, side in enumerate(("Left", "Right")):
+            p_ankle = pos_t[f"rig:{side}Foot"]
+            p_toe = pos_t.get(f"rig:{side}ToeBase", p_ankle)
+            p_heel = p_ankle - 0.25 * (p_toe - p_ankle)
+
+            ankle_positions[t, s_idx] = p_ankle
+            # Multi-point contact clearance: y_contact = min(y_heel, y_ankle, y_toe)
+            y_contact = min(float(p_heel[1]), float(p_ankle[1]), float(p_toe[1]))
+            contact_positions[t, s_idx] = np.array([p_ankle[0], y_contact, p_ankle[2]], dtype=np.float64)
+
+    # 2. Detect stance phases using ground-aligned multi-point clearance and planar speed
+    stance_mask = detect_stance_phases(
+        contact_positions,
+        fps=fps,
+        speed_thresh=0.45,
+        height_thresh=0.06,
+    )
 
     # If no stance phases detected, return unmodified rotations
     if not np.any(stance_mask):
@@ -465,7 +527,7 @@ def apply_foot_ik(
     out_seq: list[dict[str, np.ndarray]] = [{k: v.copy() for k, v in r.items()} for r in r_anim_seq]
 
     for t in range(n_frames):
-        world_t = forward_kinematics(skel, out_seq[t], hips_translation_cm=hips_cm_seq[t])
+        world_t = forward_kinematics(skel, out_seq[t], hips_translation_cm=aligned_hips_cm[t])
         pos_t = world_positions_m(skel, world_t)
 
         for s_idx, (side, l1, l2) in enumerate((("Left", l1_left, l2_left), ("Right", l1_right, l2_right))):

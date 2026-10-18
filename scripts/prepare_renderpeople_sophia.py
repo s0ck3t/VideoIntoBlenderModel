@@ -243,42 +243,61 @@ def build_sophia_arkit_shape_keys(mesh_obj, coords: np.ndarray, log_fn) -> None:
         f"eye_l={c_eye_l.round(2).tolist()}, brow_l={c_eyebrow_l.round(2).tolist()}"
     )
 
-    # Combine artist vertex group masks with smooth spatial Gaussians for natural falloff
-    g_jaw = np.maximum(w_jaw, 0.65 * gaussian_falloff(coords, c_jaw, (4.2, 3.2, 3.8)))
-    g_mouth_l = np.maximum(w_mouth_l, 0.75 * gaussian_falloff(coords, c_mouth_l, (2.2, 1.8, 2.2)))
-    g_mouth_r = np.maximum(w_mouth_r, 0.75 * gaussian_falloff(coords, c_mouth_r, (2.2, 1.8, 2.2)))
-    g_mouth_c = gaussian_falloff(coords, c_mouth, (2.8, 1.8, 2.4))
-    g_upper_lip_l = gaussian_falloff(coords, c_mouth + np.array([1.2, 0.7, 0.2]), (1.6, 1.2, 1.8))
-    g_upper_lip_r = gaussian_falloff(coords, c_mouth + np.array([-1.2, 0.7, 0.2]), (1.6, 1.2, 1.8))
-    g_lower_lip_l = gaussian_falloff(coords, c_mouth + np.array([1.2, -0.7, 0.1]), (1.6, 1.2, 1.8))
-    g_lower_lip_r = gaussian_falloff(coords, c_mouth + np.array([-1.2, -0.7, 0.1]), (1.6, 1.2, 1.8))
+    # Partition upper maxilla vs lower mandible across the oral commissure plane,
+    # and left vs right across the sagittal midline so bilateral morphs never double at the philtrum
+    y_lip_split = float(c_mouth[1])
+    x_mid = float(c_mouth[0])
+    mandible_gate = (1.0 / (1.0 + np.exp((coords[:, 1] - y_lip_split) / 0.18))).astype(np.float32)
+    maxilla_gate = (1.0 - mandible_gate).astype(np.float32)
+    left_gate = (1.0 / (1.0 + np.exp(-(coords[:, 0] - x_mid) / 0.25))).astype(np.float32)
+    right_gate = (1.0 - left_gate).astype(np.float32)
 
-    g_eyelid_l = np.maximum(w_eyelid_l, 0.70 * gaussian_falloff(coords, c_eyelid_l, (1.8, 1.2, 1.6)))
-    g_eyelid_r = np.maximum(w_eyelid_r, 0.70 * gaussian_falloff(coords, c_eyelid_r, (1.8, 1.2, 1.6)))
-    g_eye_l = np.maximum(w_eye_l, 0.50 * g_eyelid_l)
-    g_eye_r = np.maximum(w_eye_r, 0.50 * g_eyelid_r)
+    # Combine artist vertex group masks with smooth spatial Gaussians and anatomical partitioning
+    g_jaw_raw = np.maximum(w_jaw, 0.70 * gaussian_falloff(coords, c_jaw, (3.2, 2.4, 3.0)))
+    g_jaw = g_jaw_raw * mandible_gate
 
-    g_brow_l = np.maximum(w_eyebrow_l, 0.75 * gaussian_falloff(coords, c_eyebrow_l, (2.6, 1.6, 2.0)))
-    g_brow_r = np.maximum(w_eyebrow_r, 0.75 * gaussian_falloff(coords, c_eyebrow_r, (2.6, 1.6, 2.0)))
+    g_mouth_l = np.maximum(w_mouth_l, 0.70 * gaussian_falloff(coords, c_mouth_l, (1.8, 1.3, 1.8))) * left_gate
+    g_mouth_r = np.maximum(w_mouth_r, 0.70 * gaussian_falloff(coords, c_mouth_r, (1.8, 1.3, 1.8))) * right_gate
+    g_mouth_c = gaussian_falloff(coords, c_mouth, (2.1, 1.3, 1.8))
+
+    g_upper_lip_l = gaussian_falloff(coords, c_mouth + np.array([0.9, 0.45, 0.2]), (1.5, 0.80, 1.4)) * maxilla_gate * left_gate
+    g_upper_lip_r = gaussian_falloff(coords, c_mouth + np.array([-0.9, 0.45, 0.2]), (1.5, 0.80, 1.4)) * maxilla_gate * right_gate
+    g_lower_lip_l = gaussian_falloff(coords, c_mouth + np.array([0.9, -0.45, 0.15]), (1.5, 0.90, 1.4)) * mandible_gate * left_gate
+    g_lower_lip_r = gaussian_falloff(coords, c_mouth + np.array([-0.9, -0.45, 0.15]), (1.5, 0.90, 1.4)) * mandible_gate * right_gate
+
+    g_eyelid_l = np.maximum(w_eyelid_l, 0.75 * gaussian_falloff(coords, c_eyelid_l, (1.5, 0.9, 1.4))) * left_gate
+    g_eyelid_r = np.maximum(w_eyelid_r, 0.75 * gaussian_falloff(coords, c_eyelid_r, (1.5, 0.9, 1.4))) * right_gate
+    upper_lid_gate_l = (1.0 / (1.0 + np.exp(-(coords[:, 1] - float(c_eye_l[1])) / 0.15))).astype(np.float32)
+    upper_lid_gate_r = (1.0 / (1.0 + np.exp(-(coords[:, 1] - float(c_eye_r[1])) / 0.15))).astype(np.float32)
+    g_upper_lid_l = g_eyelid_l * upper_lid_gate_l
+    g_lower_lid_l = g_eyelid_l * (1.0 - upper_lid_gate_l)
+    g_upper_lid_r = g_eyelid_r * upper_lid_gate_r
+    g_lower_lid_r = g_eyelid_r * (1.0 - upper_lid_gate_r)
+
+    g_eye_l = np.maximum(w_eye_l, 0.45 * g_eyelid_l)
+    g_eye_r = np.maximum(w_eye_r, 0.45 * g_eyelid_r)
+
+    g_brow_l = np.maximum(w_eyebrow_l, 0.75 * gaussian_falloff(coords, c_eyebrow_l, (2.2, 1.3, 1.6))) * left_gate
+    g_brow_r = np.maximum(w_eyebrow_r, 0.75 * gaussian_falloff(coords, c_eyebrow_r, (2.2, 1.3, 1.6))) * right_gate
     g_brow_inner = gaussian_falloff(
-        coords, 0.5 * (c_eyebrow_l + c_eyebrow_r), (2.2, 1.6, 2.0)
+        coords, 0.5 * (c_eyebrow_l + c_eyebrow_r), (1.8, 1.3, 1.6)
     )
     g_brow_outer_l = gaussian_falloff(
-        coords, c_eyebrow_l + np.array([1.2, 0.0, -0.3]), (1.8, 1.5, 1.8)
-    )
+        coords, c_eyebrow_l + np.array([1.2, 0.0, -0.3]), (1.5, 1.2, 1.5)
+    ) * left_gate
     g_brow_outer_r = gaussian_falloff(
-        coords, c_eyebrow_r + np.array([-1.2, 0.0, -0.3]), (1.8, 1.5, 1.8)
-    )
+        coords, c_eyebrow_r + np.array([-1.2, 0.0, -0.3]), (1.5, 1.2, 1.5)
+    ) * right_gate
 
     c_cheek_l = c_mouth_l + np.array([1.8, 2.2, -0.8])
     c_cheek_r = c_mouth_r + np.array([-1.8, 2.2, -0.8])
-    g_cheek_l = gaussian_falloff(coords, c_cheek_l, (2.6, 2.4, 2.4))
-    g_cheek_r = gaussian_falloff(coords, c_cheek_r, (2.6, 2.4, 2.4))
+    g_cheek_l = gaussian_falloff(coords, c_cheek_l, (2.2, 2.0, 2.0)) * left_gate
+    g_cheek_r = gaussian_falloff(coords, c_cheek_r, (2.2, 2.0, 2.0)) * right_gate
 
     c_nose_l = c_mouth + np.array([1.1, 2.4, 0.6])
     c_nose_r = c_mouth + np.array([-1.1, 2.4, 0.6])
-    g_nose_l = gaussian_falloff(coords, c_nose_l, (1.5, 1.5, 1.5))
-    g_nose_r = gaussian_falloff(coords, c_nose_r, (1.5, 1.5, 1.5))
+    g_nose_l = gaussian_falloff(coords, c_nose_l, (1.3, 1.3, 1.3)) * left_gate
+    g_nose_r = gaussian_falloff(coords, c_nose_r, (1.3, 1.3, 1.3)) * right_gate
 
     # Clear existing shape keys if any
     if mesh_obj.data.shape_keys is not None:
@@ -295,64 +314,64 @@ def build_sophia_arkit_shape_keys(mesh_obj, coords: np.ndarray, log_fn) -> None:
 
     deltas_map: dict[str, np.ndarray] = {
         # Brows (5)
-        "browDownLeft": make_delta(g_brow_l, (-0.12, -0.55, 0.10)),
-        "browDownRight": make_delta(g_brow_r, (0.12, -0.55, 0.10)),
-        "browInnerUp": make_delta(np.maximum(g_brow_inner, 0.5 * (g_brow_l + g_brow_r)), (0.0, 0.60, 0.08)),
-        "browOuterUpLeft": make_delta(np.maximum(g_brow_outer_l, 0.6 * g_brow_l), (0.08, 0.55, 0.05)),
-        "browOuterUpRight": make_delta(np.maximum(g_brow_outer_r, 0.6 * g_brow_r), (-0.08, 0.55, 0.05)),
+        "browDownLeft": make_delta(g_brow_l, (-0.15, -0.75, 0.10)),
+        "browDownRight": make_delta(g_brow_r, (0.15, -0.75, 0.10)),
+        "browInnerUp": make_delta(np.maximum(g_brow_inner, 0.50 * (g_brow_l + g_brow_r)), (0.0, 0.80, 0.08)),
+        "browOuterUpLeft": make_delta(np.maximum(g_brow_outer_l, 0.60 * g_brow_l), (0.10, 0.75, 0.06)),
+        "browOuterUpRight": make_delta(np.maximum(g_brow_outer_r, 0.60 * g_brow_r), (-0.10, 0.75, 0.06)),
         # Cheeks (3)
-        "cheekPuff": make_delta(g_cheek_l, (0.65, 0.05, 0.45)) + make_delta(g_cheek_r, (-0.65, 0.05, 0.45)),
-        "cheekSquintLeft": make_delta(g_cheek_l, (-0.08, 0.45, 0.18)),
-        "cheekSquintRight": make_delta(g_cheek_r, (0.08, 0.45, 0.18)),
+        "cheekPuff": make_delta(g_cheek_l, (0.65, 0.05, 0.40)) + make_delta(g_cheek_r, (-0.65, 0.05, 0.40)),
+        "cheekSquintLeft": make_delta(g_cheek_l, (-0.08, 0.50, 0.18)),
+        "cheekSquintRight": make_delta(g_cheek_r, (0.08, 0.50, 0.18)),
         # Eyes (14)
-        "eyeBlinkLeft": make_delta(g_eyelid_l, (0.0, -0.65, -0.10)),
-        "eyeBlinkRight": make_delta(g_eyelid_r, (0.0, -0.65, -0.10)),
-        "eyeLookDownLeft": make_delta(g_eye_l, (0.0, -0.30, -0.04)),
-        "eyeLookDownRight": make_delta(g_eye_r, (0.0, -0.30, -0.04)),
-        "eyeLookInLeft": make_delta(g_eye_l, (-0.30, 0.0, -0.04)),
-        "eyeLookInRight": make_delta(g_eye_r, (0.30, 0.0, -0.04)),
-        "eyeLookOutLeft": make_delta(g_eye_l, (0.30, 0.0, -0.04)),
-        "eyeLookOutRight": make_delta(g_eye_r, (-0.30, 0.0, -0.04)),
-        "eyeLookUpLeft": make_delta(g_eye_l, (0.0, 0.30, -0.04)),
-        "eyeLookUpRight": make_delta(g_eye_r, (0.0, 0.30, -0.04)),
-        "eyeSquintLeft": make_delta(g_eyelid_l, (0.0, 0.35, 0.08)),
-        "eyeSquintRight": make_delta(g_eyelid_r, (0.0, 0.35, 0.08)),
-        "eyeWideLeft": make_delta(g_eyelid_l, (0.0, 0.48, 0.08)),
-        "eyeWideRight": make_delta(g_eyelid_r, (0.0, 0.48, 0.08)),
+        "eyeBlinkLeft": make_delta(g_upper_lid_l, (0.0, -0.85, -0.08)) + make_delta(g_lower_lid_l, (0.0, 0.20, -0.04)),
+        "eyeBlinkRight": make_delta(g_upper_lid_r, (0.0, -0.85, -0.08)) + make_delta(g_lower_lid_r, (0.0, 0.20, -0.04)),
+        "eyeLookDownLeft": make_delta(g_eye_l, (0.0, -0.35, -0.04)),
+        "eyeLookDownRight": make_delta(g_eye_r, (0.0, -0.35, -0.04)),
+        "eyeLookInLeft": make_delta(g_eye_l, (-0.35, 0.0, -0.04)),
+        "eyeLookInRight": make_delta(g_eye_r, (0.35, 0.0, -0.04)),
+        "eyeLookOutLeft": make_delta(g_eye_l, (0.35, 0.0, -0.04)),
+        "eyeLookOutRight": make_delta(g_eye_r, (-0.35, 0.0, -0.04)),
+        "eyeLookUpLeft": make_delta(g_eye_l, (0.0, 0.35, -0.04)),
+        "eyeLookUpRight": make_delta(g_eye_r, (0.0, 0.35, -0.04)),
+        "eyeSquintLeft": make_delta(g_lower_lid_l, (0.0, 0.40, 0.06)) + make_delta(g_upper_lid_l, (0.0, -0.20, 0.04)),
+        "eyeSquintRight": make_delta(g_lower_lid_r, (0.0, 0.40, 0.06)) + make_delta(g_upper_lid_r, (0.0, -0.20, 0.04)),
+        "eyeWideLeft": make_delta(g_upper_lid_l, (0.0, 0.60, 0.06)) + make_delta(g_lower_lid_l, (0.0, -0.15, 0.04)),
+        "eyeWideRight": make_delta(g_upper_lid_r, (0.0, 0.60, 0.06)) + make_delta(g_lower_lid_r, (0.0, -0.15, 0.04)),
         # Jaw (4)
-        "jawForward": make_delta(g_jaw, (0.0, 0.08, 0.70)),
-        "jawLeft": make_delta(g_jaw, (0.60, -0.10, 0.0)),
-        "jawOpen": make_delta(g_jaw, (0.0, -1.25, -0.25)),
-        "jawRight": make_delta(g_jaw, (-0.60, -0.10, 0.0)),
+        "jawForward": make_delta(g_jaw, (0.0, 0.05, 0.65)),
+        "jawLeft": make_delta(g_jaw, (0.65, -0.08, 0.0)),
+        "jawOpen": make_delta(g_jaw, (0.0, -1.35, -0.30)),
+        "jawRight": make_delta(g_jaw, (-0.65, -0.08, 0.0)),
         # Mouth (23)
-        "mouthClose": make_delta(g_mouth_c, (0.0, 0.50, 0.08)),
-        "mouthDimpleLeft": make_delta(g_mouth_l, (0.35, 0.08, -0.40)),
-        "mouthDimpleRight": make_delta(g_mouth_r, (-0.35, 0.08, -0.40)),
-        "mouthFrownLeft": make_delta(g_mouth_l, (-0.08, -0.60, 0.08)),
-        "mouthFrownRight": make_delta(g_mouth_r, (0.08, -0.60, 0.08)),
-        "mouthFunnel": make_delta(g_mouth_c, (0.0, 0.0, 0.65)),
-        "mouthLeft": make_delta(g_mouth_c, (0.65, 0.0, 0.0)),
-        "mouthLowerDownLeft": make_delta(g_lower_lip_l, (0.0, -0.60, 0.08)),
-        "mouthLowerDownRight": make_delta(g_lower_lip_r, (0.0, -0.60, 0.08)),
-        "mouthPressLeft": make_delta(g_mouth_l, (0.0, 0.0, -0.35)),
-        "mouthPressRight": make_delta(g_mouth_r, (0.0, 0.0, -0.35)),
-        "mouthPucker": make_delta(g_mouth_c, (0.0, 0.0, 0.85)),
-        "mouthRight": make_delta(g_mouth_c, (-0.65, 0.0, 0.0)),
-        "mouthRollLower": make_delta(0.5 * (g_lower_lip_l + g_lower_lip_r), (0.0, 0.20, -0.45)),
-        "mouthRollUpper": make_delta(0.5 * (g_upper_lip_l + g_upper_lip_r), (0.0, -0.20, -0.45)),
-        "mouthShrugLower": make_delta(g_mouth_c, (0.0, 0.50, 0.25)),
-        "mouthShrugUpper": make_delta(g_mouth_c, (0.0, 0.50, 0.25)),
-        "mouthSmileLeft": make_delta(g_mouth_l, (0.55, 0.65, -0.22)),
-        "mouthSmileRight": make_delta(g_mouth_r, (-0.55, 0.65, -0.22)),
-        "mouthStretchLeft": make_delta(g_mouth_l, (0.70, 0.0, -0.12)),
-        "mouthStretchRight": make_delta(g_mouth_r, (-0.70, 0.0, -0.12)),
-        "mouthUpperUpLeft": make_delta(g_upper_lip_l, (0.0, 0.60, 0.08)),
-        "mouthUpperUpRight": make_delta(g_upper_lip_r, (0.0, 0.60, 0.08)),
+        "mouthClose": make_delta(g_mouth_c * mandible_gate, (0.0, 0.65, 0.05)) + make_delta(g_mouth_c * maxilla_gate, (0.0, -0.25, 0.04)),
+        "mouthDimpleLeft": make_delta(g_mouth_l, (0.35, 0.08, -0.35)),
+        "mouthDimpleRight": make_delta(g_mouth_r, (-0.35, 0.08, -0.35)),
+        "mouthFrownLeft": make_delta(g_mouth_l, (-0.10, -0.55, 0.05)),
+        "mouthFrownRight": make_delta(g_mouth_r, (0.10, -0.55, 0.05)),
+        "mouthFunnel": make_delta(g_mouth_l, (-0.25, 0.0, 0.25)) + make_delta(g_mouth_r, (0.25, 0.0, 0.25)),
+        "mouthLeft": make_delta(g_mouth_c, (0.60, 0.0, 0.0)),
+        "mouthLowerDownLeft": make_delta(g_lower_lip_l, (0.08, -0.55, 0.05)),
+        "mouthLowerDownRight": make_delta(g_lower_lip_r, (-0.08, -0.55, 0.05)),
+        "mouthPressLeft": make_delta(g_mouth_l, (0.0, 0.0, -0.30)),
+        "mouthPressRight": make_delta(g_mouth_r, (0.0, 0.0, -0.30)),
+        "mouthPucker": make_delta(g_mouth_l, (-0.45, 0.0, 0.30)) + make_delta(g_mouth_r, (0.45, 0.0, 0.30)),
+        "mouthRight": make_delta(g_mouth_c, (-0.60, 0.0, 0.0)),
+        "mouthRollLower": make_delta(g_lower_lip_l + g_lower_lip_r, (0.0, 0.18, -0.35)),
+        "mouthRollUpper": make_delta(g_upper_lip_l + g_upper_lip_r, (0.0, -0.18, -0.35)),
+        "mouthShrugLower": make_delta(g_mouth_c * mandible_gate, (0.0, 0.40, 0.15)),
+        "mouthShrugUpper": make_delta(g_mouth_c * maxilla_gate, (0.0, 0.40, 0.15)),
+        "mouthSmileLeft": make_delta(g_mouth_l, (0.60, 0.55, -0.18)),
+        "mouthSmileRight": make_delta(g_mouth_r, (-0.60, 0.55, -0.18)),
+        "mouthStretchLeft": make_delta(g_mouth_l, (0.65, -0.05, -0.12)),
+        "mouthStretchRight": make_delta(g_mouth_r, (-0.65, -0.05, -0.12)),
+        "mouthUpperUpLeft": make_delta(g_upper_lip_l, (0.08, 0.45, 0.05)),
+        "mouthUpperUpRight": make_delta(g_upper_lip_r, (-0.08, 0.45, 0.05)),
         # Nose (2)
-        "noseSneerLeft": make_delta(g_nose_l, (0.08, 0.45, 0.12)),
-        "noseSneerRight": make_delta(g_nose_r, (-0.08, 0.45, 0.12)),
+        "noseSneerLeft": make_delta(g_nose_l, (0.08, 0.45, 0.10)),
+        "noseSneerRight": make_delta(g_nose_r, (-0.08, 0.45, 0.10)),
         # Tongue (1)
-        "tongueOut": make_delta(g_mouth_c, (0.0, -0.18, 0.70)),
+        "tongueOut": make_delta(g_mouth_c * mandible_gate, (0.0, -0.15, 0.50)),
     }
 
     for name in CANONICAL_ARKIT_BLENDSHAPES:

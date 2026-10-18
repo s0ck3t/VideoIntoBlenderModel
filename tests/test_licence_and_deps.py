@@ -249,6 +249,7 @@ def test_licence_registers_exist_and_consistent() -> None:
         "Apache-2.0",
         "MIT",
         "Pexels",
+        "Renderpeople-Free",
     }
 
     for item in videos + character_rigs:

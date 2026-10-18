@@ -38,6 +38,18 @@ ANATOMICAL_HINGES = [
     (17, 19, 21, 145.0, False),  # Right arm: shoulder -> elbow -> wrist
 ]
 
+# Invariant core-torso joint indices in Body24 (pelvis, hips, spine, neck, head, shoulders)
+CORE_TRUNK_INDICES = np.array([0, 1, 2, 3, 6, 9, 12, 15, 16, 17], dtype=np.int32)
+
+# Distal limb joint indices requiring high-fidelity 2D reprojection locking
+DISTAL_LIMB_JOINTS = frozenset({4, 5, 7, 8, 10, 11, 18, 19, 20, 21, 22, 23})
+
+# Standard limb chains for coronal elevation barrier & directional locking: (proximal, hinge, distal)
+LIMB_CHAINS = [
+    (1, 4, 7),  # Left leg: hip -> knee -> ankle
+    (2, 5, 8),  # Right leg: hip -> knee -> ankle
+]
+
 
 def calculate_bone_lengths(
     positions_3d: np.ndarray,
@@ -101,6 +113,7 @@ def optimise_window(
     w_smooth: float = 4.0,
     w_jerk: float = 2.0,
     w_anat: float = 8.0,
+    w_elev: float = 20.0,
     max_nfev: int = 25,
 ) -> np.ndarray:
     """Optimise a single sliding temporal window using non-linear least squares.
@@ -119,6 +132,7 @@ def optimise_window(
         w_smooth: Weight on second-order temporal acceleration penalty.
         w_jerk: Weight on third-order temporal jerk penalty.
         w_anat: Weight on anatomical range-of-motion limits.
+        w_elev: Weight on coronal elevation barrier for high-amplitude kicks.
         max_nfev: Maximum function evaluations in least_squares.
 
     Returns:
@@ -127,13 +141,22 @@ def optimise_window(
     win_len, n_joints, _ = x_init.shape
     x0 = x_init.copy().ravel()
 
-    # Pre-compute weights
-    sqrt_w_2d = math.sqrt(max(w_2d, 0.0))
-    sqrt_w_3d = math.sqrt(max(w_3d, 0.0))
+    # Pre-compute anisotropic weights: distal joints (ankles, knees, wrists) receive elevated authority
+    # (w_2D >= 8.0 - 12.0) while preserving core torso stability.
+    w_2d_joint = np.full(n_joints, max(w_2d, 0.0), dtype=np.float64)
+    for j_dist in DISTAL_LIMB_JOINTS:
+        w_2d_joint[j_dist] = max(w_2d * 2.5, 10.0)
+    sqrt_w_2d_joint = np.sqrt(w_2d_joint)
+
+    # Anisotropic 3D prior weights: suppress (X, Y) prior (0.10) to allow 2D reprojection locking,
+    # while preserving full Z depth regularisation.
+    sqrt_w_3d_xy = math.sqrt(max(w_3d * 0.10, 0.0))
+    sqrt_w_3d_z = math.sqrt(max(w_3d, 0.0))
     sqrt_w_bone = math.sqrt(max(w_bone, 0.0))
     sqrt_w_smooth = math.sqrt(max(w_smooth, 0.0))
     sqrt_w_jerk = math.sqrt(max(w_jerk, 0.0))
     sqrt_w_anat = math.sqrt(max(w_anat, 0.0))
+    sqrt_w_elev = math.sqrt(max(w_elev, 0.0))
 
     has_2d = s_body24_win is not None and torso_scales is not None
     vis = vis_win if vis_win is not None else np.ones((win_len, n_joints), dtype=np.float64)
@@ -143,8 +166,8 @@ def optimise_window(
         p = params.reshape((win_len, n_joints, 3))
         res_list: list[np.ndarray] = []
 
-        # 1. 2D Screen Landmark Reprojection Residuals
-        if has_2d and sqrt_w_2d > 0.0:
+        # 1. Anisotropic 2D Screen Landmark Reprojection Residuals
+        if has_2d and np.any(w_2d_joint > 0.0):
             assert s_body24_win is not None
             assert torso_scales is not None
             dx = p[:, :, 0] - p[:, 0:1, 0]
@@ -156,18 +179,19 @@ def optimise_window(
                 u_hat = s_body24_win[:, 0:1, 0] + torso_scales[:, None] * dx
                 v_hat = s_body24_win[:, 0:1, 1] - torso_scales[:, None] * dy
 
-            diff_u = (u_hat - s_body24_win[:, :, 0]) * np.sqrt(vis) * sqrt_w_2d
-            diff_v = (v_hat - s_body24_win[:, :, 1]) * np.sqrt(vis) * sqrt_w_2d
+            diff_u = (u_hat - s_body24_win[:, :, 0]) * np.sqrt(vis) * sqrt_w_2d_joint[None, :]
+            diff_v = (v_hat - s_body24_win[:, :, 1]) * np.sqrt(vis) * sqrt_w_2d_joint[None, :]
             res_list.append(diff_u.ravel())
             res_list.append(diff_v.ravel())
 
-        # 2. 3D Prior Residuals (downweighting Z when foreshortened)
-        if sqrt_w_3d > 0.0:
-            diff_xy = (p[:, :, :2] - x_init[:, :, :2]) * sqrt_w_3d
-            res_list.append(diff_xy.ravel())
+        # 2. Anisotropic 3D Prior Residuals (suppressed XY prior, full Z depth regularisation)
+        if sqrt_w_3d_z > 0.0:
+            if sqrt_w_3d_xy > 0.0:
+                diff_xy = (p[:, :, :2] - x_init[:, :, :2]) * sqrt_w_3d_xy
+                res_list.append(diff_xy.ravel())
 
             # For Z coordinate: downweight depth prior in foreshortened frames
-            z_weight = sqrt_w_3d * (1.0 - 0.75 * np.clip(f_factors, 0.0, 1.0))
+            z_weight = sqrt_w_3d_z * (1.0 - 0.75 * np.clip(f_factors, 0.0, 1.0))
             diff_z = (p[:, :, 2] - x_init[:, :, 2]) * z_weight
             res_list.append(diff_z.ravel())
 
@@ -192,7 +216,7 @@ def optimise_window(
             jerk = p[3:] - 3.0 * p[2:-1] + 3.0 * p[1:-2] - p[:-3]
             res_list.append((jerk * sqrt_w_jerk).ravel())
 
-        # 6. Anatomical Range-of-Motion Limit Penalties
+        # 6. Anatomical Range-of-Motion Limit Penalties & Support Knee Anti-Collapse
         if sqrt_w_anat > 0.0:
             anat_penalties = []
             for prox, hinge, dist, max_deg, is_knee in ANATOMICAL_HINGES:
@@ -208,7 +232,7 @@ def optimise_window(
                 exceed = np.maximum(0.0, flex_deg - max_deg)
                 anat_penalties.append(exceed * (sqrt_w_anat * 0.02))
 
-                # Knee hyperextension penalty: prevent backward deflection
+                # Knee hyperextension penalty & support knee anti-collapse during tucks/crouches
                 if is_knee:
                     # Posterior deflection relative to pelvis anterior direction
                     v_right = p[:, 2] - p[:, 1]
@@ -225,8 +249,41 @@ def optimise_window(
                     hyperextend = np.maximum(0.0, -ant_disp - 0.01)
                     anat_penalties.append(hyperextend * (sqrt_w_anat * 2.0))
 
+                    # Prevent self-occluded support knee collapse during tucks and deep crouches
+                    chord_len = np.linalg.norm(p[:, dist] - p[:, prox], axis=-1)
+                    l_prox_hinge = bone_lengths[(prox, hinge)]
+                    l_hinge_dist = bone_lengths[(hinge, dist)]
+                    max_reach = l_prox_hinge + l_hinge_dist
+                    shorten = np.maximum(0.0, 0.85 * max_reach - chord_len)
+                    req_ant = shorten * 0.35
+                    collapse = np.maximum(0.0, req_ant - ant_disp)
+                    anat_penalties.append(collapse * (sqrt_w_anat * 1.5))
+
             if anat_penalties:
                 res_list.append(np.concatenate(anat_penalties))
+
+        # 7. Coronal Elevation Lower-Bound Barrier for High-Amplitude Kicking Limbs
+        if has_2d and sqrt_w_elev > 0.0:
+            elev_penalties = []
+            for hip_idx, knee_idx, ankle_idx in LIMB_CHAINS:
+                # 2D screen elevation angle of proximal -> distal
+                dv_2d = s_body24_win[:, ankle_idx, 1] - s_body24_win[:, hip_idx, 1]
+                du_2d = s_body24_win[:, ankle_idx, 0] - s_body24_win[:, hip_idx, 0]
+                # In screen space, -dv_2d is upward
+                elev_2d_rad = np.arctan2(-dv_2d, np.abs(du_2d) + 1e-6)
+
+                v_limb_3d = p[:, ankle_idx] - p[:, hip_idx]
+                horiz_3d = np.hypot(v_limb_3d[:, 0], v_limb_3d[:, 2])
+
+                # Active when 2D evidence indicates high-amplitude elevation (> +5.0°)
+                is_high = (elev_2d_rad > np.radians(5.0)).astype(np.float64)
+                target_elev_rad = elev_2d_rad - np.radians(2.0)
+                req_y = horiz_3d * np.tan(target_elev_rad)
+                y_deficit = np.maximum(0.0, req_y - v_limb_3d[:, 1]) * is_high
+                elev_penalties.append(y_deficit * sqrt_w_elev)
+
+            if elev_penalties:
+                res_list.append(np.concatenate(elev_penalties))
 
         if not res_list:
             return np.zeros(1, dtype=np.float64)
@@ -320,13 +377,26 @@ def optimise_trajectory_windowed(
 
         if s_body24 is not None:
             # Estimate signed weak-perspective scales (scale_u, scale_v) per frame
-            # accounting for rotZ(180°) coordinate convention and 16:9 image aspect ratio.
-            du = s_body24[:, :, 0] - s_body24[:, 0:1, 0]
-            dv = s_body24[:, :, 1] - s_body24[:, 0:1, 1]
-            dx0 = data[:, :, 0] - data[:, 0:1, 0]
-            dy0 = data[:, :, 1] - data[:, 0:1, 1]
-            scale_u = np.sum(du * dx0, axis=-1) / np.maximum(np.sum(dx0 * dx0, axis=-1), 1e-4)
-            scale_v = np.sum(dv * dy0, axis=-1) / np.maximum(np.sum(dy0 * dy0, axis=-1), 1e-4)
+            # exclusively from invariant core-torso geometry (pelvis, hips, spine, neck, shoulders, head),
+            # preventing limb kicking/reaching motions from distorting camera scale estimation.
+            trunk_idx = CORE_TRUNK_INDICES
+            du_trunk = s_body24[:, trunk_idx, 0] - s_body24[:, 0:1, 0]
+            dv_trunk = s_body24[:, trunk_idx, 1] - s_body24[:, 0:1, 1]
+            dx0_trunk = data[:, trunk_idx, 0] - data[:, 0:1, 0]
+            dy0_trunk = data[:, trunk_idx, 1] - data[:, 0:1, 1]
+
+            if vis_body24 is not None:
+                vis_trunk = vis_body24[:, trunk_idx]
+            else:
+                vis_trunk = np.ones((n_frames, len(trunk_idx)), dtype=np.float64)
+
+            w_trunk = np.maximum(vis_trunk, 0.05)
+            scale_u = np.sum(w_trunk * du_trunk * dx0_trunk, axis=-1) / np.maximum(
+                np.sum(w_trunk * dx0_trunk * dx0_trunk, axis=-1), 1e-4
+            )
+            scale_v = np.sum(w_trunk * dv_trunk * dy0_trunk, axis=-1) / np.maximum(
+                np.sum(w_trunk * dy0_trunk * dy0_trunk, axis=-1), 1e-4
+            )
             scale_u = np.clip(scale_u, -5.0, 5.0)
             scale_v = np.clip(scale_v, -5.0, 5.0)
             torso_scales = np.stack([scale_u, scale_v], axis=-1)
@@ -367,6 +437,13 @@ def optimise_trajectory_windowed(
             s_factor = np.clip((0.035 - d_2d) / 0.035, 0.0, 1.0)
             foreshorten_factors[:, child] = np.maximum(foreshorten_factors[:, child], s_factor)
 
+    # Anisotropic distal weighting for both GPU and CPU solvers
+    vis_opt: np.ndarray | None = None
+    if vis_body24 is not None:
+        vis_opt = vis_body24.copy()
+        for j_dist in DISTAL_LIMB_JOINTS:
+            vis_opt[:, j_dist] *= 2.5
+
     # 3. Sliding Window Optimization with Hann Overlap Blending
     accum_positions = np.zeros((n_frames, 24, 3), dtype=np.float64)
     accum_weights = np.zeros(n_frames, dtype=np.float64)
@@ -387,7 +464,7 @@ def optimise_trajectory_windowed(
         if full_starts:
             b_x = np.stack([data[t0 : t0 + W] for t0 in full_starts], axis=0)
             b_s = np.stack([s_body24[t0 : t0 + W] for t0 in full_starts], axis=0) if s_body24 is not None else None
-            b_v = np.stack([vis_body24[t0 : t0 + W] for t0 in full_starts], axis=0) if vis_body24 is not None else None
+            b_v = np.stack([vis_opt[t0 : t0 + W] for t0 in full_starts], axis=0) if vis_opt is not None else None
             b_sc = np.stack([torso_scales[t0 : t0 + W] for t0 in full_starts], axis=0) if torso_scales is not None else None
             b_f = np.stack([foreshorten_factors[t0 : t0 + W] for t0 in full_starts], axis=0)
 
@@ -428,7 +505,7 @@ def optimise_trajectory_windowed(
             w_act = t1 - t0
             x_win = data[t0:t1].copy()
             s_win = s_body24[t0:t1] if s_body24 is not None else None
-            v_win = vis_body24[t0:t1] if vis_body24 is not None else None
+            v_win = vis_opt[t0:t1] if vis_opt is not None else None
             sc_win = torso_scales[t0:t1] if torso_scales is not None else None
             f_win = foreshorten_factors[t0:t1]
             opt_win = optimise_windows_cuda(
@@ -466,7 +543,7 @@ def optimise_trajectory_windowed(
 
             x_win = data[t0:t1].copy()
             s_win = s_body24[t0:t1] if s_body24 is not None else None
-            v_win = vis_body24[t0:t1] if vis_body24 is not None else None
+            v_win = vis_opt[t0:t1] if vis_opt is not None else None
             sc_win = torso_scales[t0:t1] if torso_scales is not None else None
             f_win = foreshorten_factors[t0:t1]
 
@@ -506,6 +583,58 @@ def optimise_trajectory_windowed(
     # Normalise blended positions by accumulated window weights
     valid_weights = np.maximum(accum_weights, 1e-6)[:, None, None]
     blended_positions = accum_positions / valid_weights
+
+    # High-fidelity 2D reprojection locking and coronal elevation barrier enforcement:
+    # Ensure 3D kicking limb elevation angle tracks the 2D image plane evidence without depth-foreshortening droop
+    # (theta_3D >= theta_2D - 2.0°), and prevent self-occluded support knee collapse during tucks and deep crouches.
+    if s_body24 is not None:
+        for hip_idx, knee_idx, ankle_idx in LIMB_CHAINS:
+            l_thigh = rest_lengths[(hip_idx, knee_idx)]
+            l_shin = rest_lengths[(knee_idx, ankle_idx)]
+            l_leg = l_thigh + l_shin
+
+            for t in range(n_frames):
+                dv_2d = s_body24[t, ankle_idx, 1] - s_body24[t, hip_idx, 1]
+                du_2d = s_body24[t, ankle_idx, 0] - s_body24[t, hip_idx, 0]
+                elev_2d_rad = np.arctan2(-dv_2d, np.abs(du_2d) + 1e-6)
+
+                # High kick detection (> +5.0° elevation on image plane)
+                if elev_2d_rad > np.radians(5.0):
+                    v_leg_3d = blended_positions[t, ankle_idx] - blended_positions[t, hip_idx]
+                    d_horiz = np.hypot(v_leg_3d[0], v_leg_3d[2])
+                    elev_3d_rad = np.arctan2(v_leg_3d[1], d_horiz + 1e-6)
+                    target_elev_rad = elev_2d_rad - np.radians(2.0)
+                    if elev_3d_rad < target_elev_rad:
+                        req_y = d_horiz * np.tan(target_elev_rad)
+                        y_delta = req_y - v_leg_3d[1]
+                        blended_positions[t, ankle_idx, 1] += y_delta
+                        blended_positions[t, knee_idx, 1] += y_delta * 0.55
+
+                # Support knee anti-collapse during tucks and deep crouches
+                p_hip = blended_positions[t, hip_idx]
+                p_knee = blended_positions[t, knee_idx]
+                p_ankle = blended_positions[t, ankle_idx]
+
+                v_right = blended_positions[t, 2] - blended_positions[t, 1]
+                v_up = blended_positions[t, 12] - blended_positions[t, 0]
+                f_body = np.cross(v_up, v_right)
+                n_fb = float(np.linalg.norm(f_body))
+                if n_fb > 1e-6:
+                    f_body /= n_fb
+                else:
+                    f_body = np.array([0.0, 0.0, -1.0], dtype=np.float64)
+
+                v_chord = p_ankle - p_hip
+                chord_len = float(np.linalg.norm(v_chord))
+                if chord_len > 1e-4:
+                    u_chord = v_chord / chord_len
+                    proj = p_hip + np.dot(p_knee - p_hip, u_chord) * u_chord
+                    deflect = p_knee - proj
+                    ant_disp = float(np.dot(deflect, f_body))
+                    shorten = max(0.0, 0.85 * l_leg - chord_len)
+                    req_ant = shorten * 0.35
+                    if ant_disp < req_ant:
+                        blended_positions[t, knee_idx] += (req_ant - ant_disp) * f_body
 
     # 4. Final Anatomical Hinge Clamping & Hierarchical Rigid Bone Projection
     # Clamping anatomical hinges first, then hierarchically projecting bone lengths guarantees

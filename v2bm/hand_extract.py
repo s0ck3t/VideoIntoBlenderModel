@@ -370,19 +370,39 @@ class MediaPipeHandExtractor:
 
             if res_full.hand_landmarks:
                 for i, hand_lms in enumerate(res_full.hand_landmarks):
-                    # Determine side from handedness or horizontal screen position
+                    # Determine side from 2D pose wrist proximity if available, else handedness
                     side_label = "left"
-                    if (
-                        res_full.handedness
-                        and len(res_full.handedness) > i
-                        and len(res_full.handedness[i]) > 0
-                    ):
-                        name = res_full.handedness[i][0].category_name.lower()
-                        # MediaPipe defines handedness from performer's perspective
-                        side_label = "left" if "left" in name else "right"
-                    else:
-                        wrist_x = hand_lms[0].x
-                        side_label = "left" if wrist_x > 0.5 else "right"
+                    matched_by_pose = False
+                    if pose_landmarks_2d is not None:
+                        pts_l = self._parse_pose_landmarks(pose_landmarks_2d, "left")
+                        pts_r = self._parse_pose_landmarks(pose_landmarks_2d, "right")
+                        if pts_l is not None and pts_r is not None:
+                            pw_l = pts_l[0].copy()
+                            pw_r = pts_r[0].copy()
+                            if float(np.linalg.norm(pw_l)) > 1e-4 and float(np.linalg.norm(pw_r)) > 1e-4:
+                                if np.max(np.abs(pw_l)) > 2.0 or np.max(np.abs(pw_r)) > 2.0:
+                                    pw_l = np.array([pw_l[0] / max(frame_w, 1), pw_l[1] / max(frame_h, 1)])
+                                    pw_r = np.array([pw_r[0] / max(frame_w, 1), pw_r[1] / max(frame_h, 1)])
+                                hw = np.array([hand_lms[0].x, hand_lms[0].y], dtype=np.float64)
+                                d_l = float(np.linalg.norm(hw - pw_l))
+                                d_r = float(np.linalg.norm(hw - pw_r))
+                                if min(d_l, d_r) > 0.35:
+                                    continue
+                                side_label = "left" if d_l <= d_r else "right"
+                                matched_by_pose = True
+
+                    if not matched_by_pose:
+                        if (
+                            res_full.handedness
+                            and len(res_full.handedness) > i
+                            and len(res_full.handedness[i]) > 0
+                        ):
+                            name = res_full.handedness[i][0].category_name.lower()
+                            # MediaPipe defines handedness from performer's perspective
+                            side_label = "left" if "left" in name else "right"
+                        else:
+                            wrist_x = hand_lms[0].x
+                            side_label = "left" if wrist_x > 0.5 else "right"
 
                     if results[side_label] is not None:
                         continue
@@ -450,16 +470,19 @@ class MediaPipeHandExtractor:
         self.reset_filters()
         frame_idx = 0
 
-        # Retrieve 2D pose landmarks sequence if present on motion object
+        # Retrieve 2D screen pose landmarks sequence if present on motion object
         pose_2d_seq = None
         if pose_motion is not None:
-            if hasattr(pose_motion, "keypoints_2d") and pose_motion.keypoints_2d is not None:
-                pose_2d_seq = pose_motion.keypoints_2d
-            elif (
-                hasattr(pose_motion, "world_landmarks")
-                and pose_motion.world_landmarks is not None
+            if (
+                hasattr(pose_motion, "screen_landmarks")
+                and pose_motion.screen_landmarks is not None
             ):
-                pose_2d_seq = pose_motion.world_landmarks
+                pose_2d_seq = pose_motion.screen_landmarks
+            elif (
+                hasattr(pose_motion, "keypoints_2d")
+                and pose_motion.keypoints_2d is not None
+            ):
+                pose_2d_seq = pose_motion.keypoints_2d
 
         last_valid_left_3d = np.zeros((21, 3), dtype=np.float64)
         last_valid_right_3d = np.zeros((21, 3), dtype=np.float64)
@@ -525,6 +548,25 @@ class MediaPipeHandExtractor:
             right_scr = np.asarray(right_screen_list, dtype=np.float64)
             left_p = np.asarray(left_present_list, dtype=bool)
             right_p = np.asarray(right_present_list, dtype=bool)
+
+            # Bridge short interior detection dropouts (<= 15 frames) via linear interpolation
+            max_gap = 15
+            for lms_3d, lms_scr, pres in (
+                (left_3d, left_scr, left_p),
+                (right_3d, right_scr, right_p),
+            ):
+                valid_idx = np.flatnonzero(pres)
+                if len(valid_idx) >= 2:
+                    for k in range(len(valid_idx) - 1):
+                        t0 = int(valid_idx[k])
+                        t1 = int(valid_idx[k + 1])
+                        gap = t1 - t0 - 1
+                        if 1 <= gap <= max_gap:
+                            for t in range(t0 + 1, t1):
+                                alpha = float(t - t0) / float(t1 - t0)
+                                lms_3d[t] = (1.0 - alpha) * lms_3d[t0] + alpha * lms_3d[t1]
+                                lms_scr[t] = (1.0 - alpha) * lms_scr[t0] + alpha * lms_scr[t1]
+                                pres[t] = True
 
         return ExtractedHandMotion(
             left_landmarks_3d=left_3d,

@@ -48,8 +48,10 @@ from v2bm.hand_extract import (
 )
 from v2bm.rig.hand_retarget import (
     FINGER_CHAINS,
+    _rodrigues,
     compute_finger_curl_and_splay,
     compute_palm_normal,
+    get_athletic_guard_rotations,
     solve_finger_rotations,
     solve_forearm_twist,
     solve_hand_and_finger_rotations,
@@ -64,7 +66,7 @@ from v2bm.rig.foot_ik import (
     solve_leg_ik_rotations,
     solve_two_bone_ik,
 )
-from v2bm.rig.animation import build_animation
+from v2bm.rig.animation import apply_floor_reach_ik, build_animation
 from v2bm.rig.rig_retarget import RigMapping
 from v2bm.rig.kinematics import RigBone
 
@@ -1306,4 +1308,232 @@ def test_end_to_end_build_animation_hand_and_foot_ik_wiring() -> None:
         assert np.max(np.abs(r_f @ r_f.T - np.eye(3))) < 1e-5
 
 
+def test_forearm_swing_preservation_and_local_shaft_twist() -> None:
+    """Verify ForeArmTwist rotates purely around the local longitudinal shaft axis and does not overwrite elbow flexion."""
+    n_frames = 8
+    motion = _make_base_motion(num_frames=n_frames)
+    # Bend the left elbow forward (+Z in Humanoid, -Z in Human) by 60 deg across all frames
+    idx_le = BODY24_JOINTS.index("left_elbow")
+    idx_lw = BODY24_JOINTS.index("left_wrist")
+    idx_lh = BODY24_JOINTS.index("left_hand")
+    for t in range(n_frames):
+        p_e = motion.joints_3d[t, idx_le].copy()
+        motion.joints_3d[t, idx_lw] = p_e + np.array([-0.12, 0.08, -0.20], dtype=np.float64)
+        motion.joints_3d[t, idx_lh] = motion.joints_3d[t, idx_lw] + np.array([-0.04, 0.02, -0.08], dtype=np.float64)
 
+    skel_25 = create_synthetic_humanoid_rig()
+    art_bones = dict(skel_25.bones)
+    art_bones["rig:LeftForeArmTwist"] = RigBone(
+        name="rig:LeftForeArmTwist",
+        parent="rig:LeftForeArm",
+        children=[],
+        pre_rotation=np.eye(3),
+        lcl_translation_cm=np.array([12.0, 0.0, 0.0], dtype=np.float64),
+        rest_world=np.eye(4),
+        rest_local=np.eye(4),
+        pre_rotation_euler_deg=np.zeros(3),
+    )
+    art_bones["rig:LeftHandIndex1"] = RigBone(
+        name="rig:LeftHandIndex1",
+        parent="rig:LeftHand",
+        children=[],
+        pre_rotation=np.eye(3),
+        lcl_translation_cm=np.array([8.0, 0.0, 0.0], dtype=np.float64),
+        rest_world=np.eye(4),
+        rest_local=np.eye(4),
+        pre_rotation_euler_deg=np.zeros(3),
+    )
+    rig_art = HumanoidRig(
+        bones=art_bones,
+        order=list(art_bones.keys()),
+        meters_per_unit=0.01,
+        source=Path("mock_twist.fbx"),
+    )
+    mapping_art = RigMapping(
+        skeleton_rig=skel_25,
+        target_rig=rig_art,
+        basis_change={},
+        translation_scale=1.0,
+        r_world_align=np.eye(3),
+        max_basis_deviation_deg=0.0,
+    )
+
+    # Simulate intermittent hand detection dropout at frames 3 and 4
+    l_fist = _make_synthetic_hand_landmarks("left", "fist")
+    l_seq = [l_fist if t not in (3, 4) else None for t in range(n_frames)]
+    hand_payload = {"left": l_seq, "right": [None] * n_frames}
+
+    anim_no_hands = build_animation(
+        motion, mapping_art, list(range(n_frames)), hand_data=None, enable_foot_ik=False, verbose=False
+    )
+    anim_with_hands = build_animation(
+        motion, mapping_art, list(range(n_frames)), hand_data=hand_payload, enable_foot_ik=False, verbose=False
+    )
+
+    # 1. Elbow swing on rig:LeftForeArm must be 100% preserved when hands are present
+    for t in range(n_frames):
+        assert np.allclose(
+            anim_with_hands.r_anim_rig[t]["rig:LeftForeArm"],
+            anim_no_hands.r_anim_rig[t]["rig:LeftForeArm"],
+            atol=1e-6,
+        )
+
+    # 2. ForeArmTwist must rotate strictly around the local longitudinal X-axis ([1, 0, 0])
+    for t in range(n_frames):
+        r_twist = anim_with_hands.r_anim_rig[t]["rig:LeftForeArmTwist"]
+        assert np.allclose(r_twist @ np.array([1.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0]), atol=1e-6)
+
+
+def test_wrist_3dof_articulation_flexion_deviation_twist() -> None:
+    """Verify solve_wrist_rotations calculates 3-DoF articulation (flexion, deviation, twist)."""
+    # 1. 21-point flat landmark set
+    lms_flat = _make_synthetic_hand_landmarks("left", "flat")
+    rw_flat = solve_wrist_rotations(lms_flat, "Left")
+    assert np.allclose(rw_flat @ rw_flat.T, np.eye(3), atol=1e-5)
+    assert np.isclose(float(np.linalg.det(rw_flat)), 1.0, atol=1e-5)
+
+    # 2. Pronated palm (twisted around longitudinal axis)
+    lms_twisted = lms_flat.copy()
+    # Rotate palm normal 20 degrees around X-axis
+    r_rot = _rodrigues(np.array([1.0, 0.0, 0.0]), np.radians(20.0))
+    for idx in range(1, 21):
+        lms_twisted[idx] = r_rot @ lms_flat[idx]
+
+    rw_twisted = solve_wrist_rotations(lms_twisted, "Left")
+    q_tw = quat_wxyz(rw_twisted)
+    # Quaternion must reflect non-identity rotation with longitudinal twist component
+    assert abs(q_tw[1]) > 0.05, f"Expected non-zero pronation/supination twist, got {q_tw}"
+    assert np.isclose(float(np.linalg.det(rw_twisted)), 1.0, atol=1e-5)
+
+    # 3. 4-point pose landmarks fallback ([wrist, index, pinky, thumb])
+    lms_4pt = lms_flat[[0, 5, 17, 2]]
+    rw_4pt = solve_wrist_rotations(lms_4pt, "Left")
+    assert np.allclose(rw_4pt @ rw_4pt.T, np.eye(3), atol=1e-5)
+    assert np.isclose(float(np.linalg.det(rw_4pt)), 1.0, atol=1e-5)
+
+
+def test_athletic_guard_hand_fallback_and_dropout_decay() -> None:
+    """Verify get_athletic_guard_rotations produces > 15.0 deg curl on all phalanges and decays naturally."""
+    guard_left = get_athletic_guard_rotations("Left")
+    guard_right = get_athletic_guard_rotations("Right")
+
+    # All 15 finger bones present for both hands
+    assert len(guard_left) == 15
+    assert len(guard_right) == 15
+
+    for side_name, rots in (("Left", guard_left), ("Right", guard_right)):
+        for b_name, r_mat in rots.items():
+            # Check SO(3) orthonormality
+            det = float(np.linalg.det(r_mat))
+            assert np.isclose(det, 1.0, atol=1e-5), f"{b_name} non-orthonormal det={det}"
+            assert np.max(np.abs(r_mat @ r_mat.T - np.eye(3))) < 1e-5
+
+            # Check curl angle is strictly > 15.0 degrees
+            q = quat_wxyz(r_mat)
+            ang_deg = 2.0 * np.degrees(np.arccos(np.clip(abs(q[0]), 0.0, 1.0)))
+            assert ang_deg > 15.0, (
+                f"{b_name} guard curl angle {ang_deg:.1f} deg failed threshold (> 15.0 deg)"
+            )
+
+    # Verify dropout decay behaviour in build_animation across multi-frame sequence
+    n_frames = 12
+    motion = _make_base_motion(num_frames=n_frames)
+    skel_25 = create_synthetic_humanoid_rig()
+    art_bones = dict(skel_25.bones)
+    for b in guard_left:
+        art_bones[b] = RigBone(
+            name=b,
+            parent="rig:LeftHand",
+            children=[],
+            pre_rotation=np.eye(3),
+            lcl_translation_cm=np.array([2.0, 0.0, 0.0], dtype=np.float64),
+            rest_world=np.eye(4),
+            rest_local=np.eye(4),
+            pre_rotation_euler_deg=np.zeros(3),
+        )
+    rig_art = HumanoidRig(
+        bones=art_bones,
+        order=list(art_bones.keys()),
+        meters_per_unit=0.01,
+        source=Path("mock_guard.fbx"),
+    )
+    mapping_art = RigMapping(
+        skeleton_rig=skel_25,
+        target_rig=rig_art,
+        basis_change={},
+        translation_scale=1.0,
+        r_world_align=np.eye(3),
+        max_basis_deviation_deg=0.0,
+    )
+
+    # Frame 0..2 tracked fist, then frames 3..11 drop out (motion blur in flight)
+    l_fist = _make_synthetic_hand_landmarks("left", "fist")
+    l_seq = [l_fist if t < 3 else None for t in range(n_frames)]
+    hand_payload = {"left": l_seq, "right": [None] * n_frames}
+
+    anim = build_animation(
+        motion, mapping_art, list(range(n_frames)), hand_data=hand_payload, enable_foot_ik=False, verbose=False
+    )
+
+    # Across all dropout frames (3..11), finger joints must never decay to 0 deg T-pose palm
+    for t in range(3, n_frames):
+        r_idx1 = anim.r_anim_rig[t]["rig:LeftHandIndex1"]
+        q_idx1 = quat_wxyz(r_idx1)
+        ang_deg = 2.0 * np.degrees(np.arccos(np.clip(abs(q_idx1[0]), 0.0, 1.0)))
+        assert ang_deg > 15.0, (
+            f"Frame {t} Index1 decayed to flat open palm: angle={ang_deg:.1f} deg (expected > 15.0 deg)"
+        )
+
+
+def test_floor_reach_ik_landing_scapular_depression() -> None:
+    """Verify apply_floor_reach_ik activates during deep landing crouch and brings wrist within 25.0 cm."""
+    n_frames = 6
+    motion = _make_base_motion(num_frames=n_frames)
+    skel = create_synthetic_humanoid_rig()
+    fps = 30.0
+
+    # Place pelvis and wrists in deep superhero landing crouch:
+    # Hip height = 0.30 m, forward torso lean 20 deg, arm angled downward
+    hips_list = [np.array([0.0, 30.0, 0.0], dtype=np.float64) for _ in range(n_frames)]
+    r_anim_base = {name: np.eye(3) for name in skel.order}
+    r_anim_base["rig:Spine"] = _rodrigues(np.array([1.0, 0.0, 0.0]), np.radians(20.0))
+    r_anim_base["rig:LeftArm"] = _rodrigues(np.array([0.0, 0.0, -1.0]), np.radians(70.0))
+    r_skeleton = [dict(r_anim_base) for _ in range(n_frames)]
+
+    # Initial wrist height before reach IK
+    wpos_pre = world_positions_m(skel, forward_kinematics(skel, r_skeleton[0], hips_translation_cm=hips_list[0]))
+    y_pre_cm = wpos_pre["rig:LeftHand"][1] * 100.0
+
+    # Apply reach IK
+    r_reach = apply_floor_reach_ik(r_skeleton, hips_list, skel, fps=fps)
+
+    # Post reach kinematics
+    wpos_post = world_positions_m(skel, forward_kinematics(skel, r_reach[0], hips_translation_cm=hips_list[0]))
+    y_post_cm = wpos_post["rig:LeftHand"][1] * 100.0
+
+    assert y_post_cm <= 25.0, f"Expected wrist height <= 25.0 cm, got {y_post_cm:.1f} cm (initial was {y_pre_cm:.1f} cm)"
+    assert y_post_cm >= 0.0, f"Floor penetration detected: {y_post_cm:.1f} cm"
+    # Scapular depression applied on shoulder
+    r_sh = r_reach[0]["rig:LeftShoulder"]
+    assert not np.allclose(r_sh, np.eye(3)), "Expected non-identity scapular depression on LeftShoulder"
+
+
+def test_floor_reach_ik_inactive_during_flight_and_standing() -> None:
+    """Verify apply_floor_reach_ik remains inactive when wrist is high or moving with high planar velocity."""
+    n_frames = 4
+    motion = _make_base_motion(num_frames=n_frames)
+    skel = create_synthetic_humanoid_rig()
+    fps = 30.0
+
+    # Standing posture: hip height = 1.02 m, wrist height = 0.88 m
+    hips_list = [np.array([0.0, 102.0, 0.0], dtype=np.float64) for _ in range(n_frames)]
+    r_skeleton = [{name: np.eye(3) for name in skel.order} for _ in range(n_frames)]
+
+    r_reach = apply_floor_reach_ik(r_skeleton, hips_list, skel, fps=fps)
+
+    # All rotations must be 100% identical to baseline (zero reach adjustment)
+    for t in range(n_frames):
+        for b in ("rig:LeftShoulder", "rig:LeftArm", "rig:LeftForeArm", "rig:RightShoulder", "rig:RightArm"):
+            assert np.allclose(r_reach[t][b], r_skeleton[t][b], atol=1e-8), (
+                f"apply_floor_reach_ik erroneously modified {b} in standing posture"
+            )

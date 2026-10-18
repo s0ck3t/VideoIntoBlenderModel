@@ -18,7 +18,7 @@ import numpy as np
 
 from .fbx_skeleton import FINGER_BONE_SUFFIXES, TWIST_BONE_SUFFIXES
 from ..human_motion import BODY24_JOINTS
-from .kinematics import HumanoidRig, normalize
+from .kinematics import HumanoidRig, human_to_rig, normalize
 
 # Anatomical landmark indices per digit
 FINGER_CHAINS = {
@@ -35,6 +35,8 @@ WRIST_FLEX_MIN_RAD = math.radians(-70.0)  # Extension
 WRIST_FLEX_MAX_RAD = math.radians(80.0)  # Flexion
 WRIST_DEV_MIN_RAD = math.radians(-20.0)  # Radial deviation
 WRIST_DEV_MAX_RAD = math.radians(30.0)  # Ulnar deviation
+WRIST_TWIST_MIN_RAD = math.radians(-25.0)  # Pronation/supination axial twist lower limit
+WRIST_TWIST_MAX_RAD = math.radians(25.0)  # Pronation/supination axial twist upper limit
 
 FINGER_CURL_MIN_RAD = math.radians(0.0)  # Full extension
 FINGER_CURL_MAX_RAD = math.radians(95.0)  # Full fist flexion
@@ -44,6 +46,16 @@ FINGER_SPLAY_MAX_RAD = math.radians(15.0)  # Abduction
 THUMB_OPPOSITION_MAX_RAD = math.radians(60.0)
 THUMB_FLEX_MAX_RAD = math.radians(70.0)
 THUMB_IP_MAX_RAD = math.radians(80.0)
+
+# Canonical athletic guard curl angles (flexion in radians)
+# MCP ~30 deg, PIP ~45 deg, DIP ~25 deg, Thumb ~25 deg
+GUARD_CURL_MCP_RAD = math.radians(30.0)
+GUARD_CURL_PIP_RAD = math.radians(45.0)
+GUARD_CURL_DIP_RAD = math.radians(25.0)
+GUARD_THUMB_CMC_RAD = math.radians(20.0)
+GUARD_THUMB_MCP_RAD = math.radians(25.0)
+GUARD_THUMB_IP_RAD = math.radians(25.0)
+GUARD_THUMB_OPP_RAD = math.radians(15.0)
 
 
 def _rodrigues(axis: np.ndarray, angle: float) -> np.ndarray:
@@ -173,12 +185,20 @@ def solve_wrist_rotations(
     Enforces anatomical limits:
     - Flexion / Extension: [-70 deg, +80 deg]
     - Radial / Ulnar Deviation: [-20 deg, +30 deg]
+    - Pronation / Supination: [-25 deg, +25 deg]
     Returns an orthogonal SO(3) matrix.
     """
     lms = np.asarray(hand_landmarks_21, dtype=np.float64)
-    p0 = lms[0]
-    p9 = lms[9]
-    v_hand = p9 - p0
+    if lms.ndim == 2 and lms.shape[0] == 21:
+        p0 = lms[0]
+        p9 = lms[9]
+        v_hand = p9 - p0
+    elif lms.ndim == 2 and lms.shape[0] >= 3:
+        p0 = lms[0]
+        p_mid = 0.5 * (lms[1] + lms[2])
+        v_hand = p_mid - p0
+    else:
+        return np.eye(3, dtype=np.float64)
 
     if float(np.linalg.norm(v_hand)) < 1e-6:
         return np.eye(3, dtype=np.float64)
@@ -203,9 +223,32 @@ def solve_wrist_rotations(
     dev_angle = math.asin(float(np.clip(sin_dev, -1.0, 1.0)))
     dev_clamped = float(np.clip(dev_angle, WRIST_DEV_MIN_RAD, WRIST_DEV_MAX_RAD))
 
+    # 3. Pronation / Supination (axial twist around longitudinal forearm/hand axis)
+    if lms.shape[0] == 21:
+        n_palm = compute_palm_normal(lms, side)
+    elif lms.shape[0] >= 3:
+        v_idx = lms[1] - lms[0]
+        v_pky = lms[2] - lms[0]
+        raw_n = np.cross(v_pky, v_idx) if side_cap == "Left" else np.cross(v_idx, v_pky)
+        n_palm = normalize(raw_n, fallback=n_ref_palm)
+    else:
+        n_palm = n_ref_palm
+
+    n_palm_proj = n_palm - float(np.dot(n_palm, u_ref_fwd)) * u_ref_fwd
+    norm_palm_proj = float(np.linalg.norm(n_palm_proj))
+    if norm_palm_proj > 1e-4:
+        u_palm_proj = n_palm_proj / norm_palm_proj
+        sin_twist = float(np.dot(np.cross(n_ref_palm, u_palm_proj), u_ref_fwd))
+        cos_twist = float(np.dot(n_ref_palm, u_palm_proj))
+        twist_angle = math.atan2(sin_twist, cos_twist)
+        twist_clamped = float(np.clip(twist_angle, WRIST_TWIST_MIN_RAD, WRIST_TWIST_MAX_RAD))
+    else:
+        twist_clamped = 0.0
+
     r_flex = _rodrigues(u_ref_lat, flex_clamped)
     r_dev = _rodrigues(n_ref_palm, dev_clamped)
-    r_wrist = r_dev @ r_flex
+    r_twist = _rodrigues(u_ref_fwd, twist_clamped)
+    r_wrist = r_twist @ r_dev @ r_flex
 
     # Validate SO(3) orthonormality
     u_mat, _, vt_mat = np.linalg.svd(r_wrist)
@@ -285,17 +328,21 @@ def compute_finger_curl_and_splay(
                 splay_raw = 0.0
             splay = float(np.clip(splay_raw, FINGER_SPLAY_MIN_RAD, FINGER_SPLAY_MAX_RAD))
 
-            # Curl 2 (PIP hinge): signed angle around lateral flexion axis u_lat
+            # Curl 2 (PIP hinge): 3D hinge angle with palmar sign check
             c2_cos = float(np.clip(np.dot(u1, u2), -1.0, 1.0))
             c2_sin = float(np.dot(np.cross(u1, u2), u_lat))
-            curl2_raw = math.atan2(c2_sin, c2_cos)
+            curl2_raw = math.acos(c2_cos) if c2_sin >= -1e-4 else -math.acos(c2_cos)
             curl2 = float(np.clip(curl2_raw, FINGER_CURL_MIN_RAD, FINGER_CURL_MAX_RAD))
 
-            # Curl 3 (DIP hinge): signed angle around lateral flexion axis u_lat
+            # Curl 3 (DIP hinge): 3D hinge angle with palmar sign check
             c3_cos = float(np.clip(np.dot(u2, u3), -1.0, 1.0))
             c3_sin = float(np.dot(np.cross(u2, u3), u_lat))
-            curl3_raw = math.atan2(c3_sin, c3_cos)
+            curl3_raw = math.acos(c3_cos) if c3_sin >= -1e-4 else -math.acos(c3_cos)
             curl3 = float(np.clip(curl3_raw, FINGER_CURL_MIN_RAD, FINGER_CURL_MAX_RAD))
+
+            # Collateral ligaments tighten under MCP flexion, reducing splay in a closed fist
+            if curl1 > math.radians(30.0):
+                splay *= max(0.25, 1.0 - 0.65 * (curl1 / FINGER_CURL_MAX_RAD))
 
         results[finger] = {
             "curl_rad": [curl1, curl2, curl3],
@@ -322,28 +369,55 @@ def solve_finger_rotations(
     side_cap = "Left" if "left" in side.lower() else "Right"
     analysis = compute_finger_curl_and_splay(lms, side)
 
-    n_palm = compute_palm_normal(lms, side)
-    p0 = lms[0]
-    p9 = lms[9]
-    u_meta = normalize(p9 - p0, fallback=np.array([1.0, 0.0, 0.0]))
-    u_lat = normalize(np.cross(u_meta, n_palm), fallback=np.array([0.0, 0.0, 1.0]))
+    # Construct bone-local rotations around fixed T-pose local phalanx axes
+    n_palm_local = np.array([0.0, -1.0, 0.0], dtype=np.float64)
+    u_lat_local = (
+        np.array([0.0, 0.0, -1.0], dtype=np.float64)
+        if side_cap == "Left"
+        else np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    )
+
+    # Inter-finger median regularisation across the 4 non-thumb digits to suppress single-digit noise
+    four_fingers = ("Index", "Middle", "Ring", "Pinky")
+    med_curls = [
+        float(np.median([analysis[f]["curl_rad"][j] for f in four_fingers]))
+        for j in range(3)
+    ]
 
     rotations: dict[str, np.ndarray] = {}
 
     for finger, data in analysis.items():
-        curls = data["curl_rad"]
-        splay = data["splay_rad"]
+        curls = list(data["curl_rad"])
+        splay = float(data["splay_rad"])
 
-        # Phalanx 1 (MCP): Splay + Curl
-        r_splay = _rodrigues(n_palm, splay)
-        r_curl1 = _rodrigues(u_lat, curls[0])
+        if finger in four_fingers:
+            # Blend 70% individual digit curl with 30% 4-finger median curl
+            curls = [0.70 * curls[j] + 0.30 * med_curls[j] for j in range(3)]
+            # Anatomical flexor tendon coupling: prevent stiff-PIP L-claw when MCP is strongly flexed
+            if curls[0] > math.radians(35.0) and curls[1] < 0.65 * curls[0]:
+                total = curls[0] + curls[1] + curls[2]
+                curls[0] = min(math.radians(68.0), 0.36 * total)
+                curls[1] = min(math.radians(82.0), 0.42 * total)
+                curls[2] = min(math.radians(60.0), 0.22 * total)
+            else:
+                curls[0] = min(curls[0], math.radians(72.0))
+        else:
+            # Keep thumb opposition and flexion natural without over-folding into palm
+            splay = min(splay, math.radians(32.0))
+            curls[0] = min(curls[0], math.radians(38.0))
+            curls[1] = min(curls[1], math.radians(48.0))
+            curls[2] = min(curls[2], math.radians(48.0))
+
+        # Phalanx 1 (MCP): Splay + Curl in local bone frame
+        r_splay = _rodrigues(n_palm_local, splay)
+        r_curl1 = _rodrigues(u_lat_local, curls[0])
         r1 = r_splay @ r_curl1
 
-        # Phalanx 2 (PIP): 1-DoF Hinge Curl
-        r2 = _rodrigues(u_lat, curls[1])
+        # Phalanx 2 (PIP): 1-DoF Hinge Curl in local bone frame
+        r2 = _rodrigues(u_lat_local, curls[1])
 
-        # Phalanx 3 (DIP): 1-DoF Hinge Curl
-        r3 = _rodrigues(u_lat, curls[2])
+        # Phalanx 3 (DIP): 1-DoF Hinge Curl in local bone frame
+        r3 = _rodrigues(u_lat_local, curls[2])
 
         bone1 = f"rig:{side_cap}Hand{finger}1"
         bone2 = f"rig:{side_cap}Hand{finger}2"
@@ -398,24 +472,31 @@ def solve_hand_and_finger_rotations(
                 else:
                     idx_w = BODY24_JOINTS.index(f"{side_low}_wrist")
                     idx_e = BODY24_JOINTS.index(f"{side_low}_elbow")
-                forearm_vec = (
+                raw_forearm = (
                     motion.joints_3d[frame, idx_w] - motion.joints_3d[frame, idx_e]
                 )
+                forearm_vec = human_to_rig(raw_forearm)
             except Exception:
                 forearm_vec = None
 
+        local_shaft = (
+            np.array([1.0, 0.0, 0.0], dtype=np.float64)
+            if side == "Left"
+            else np.array([-1.0, 0.0, 0.0], dtype=np.float64)
+        )
         if forearm_vec is None:
-            forearm_vec = (
-                np.array([1.0, 0.0, 0.0], dtype=np.float64)
-                if side == "Left"
-                else np.array([-1.0, 0.0, 0.0], dtype=np.float64)
-            )
+            forearm_vec = local_shaft.copy()
 
         twist_angle = solve_forearm_twist(n_palm, forearm_vec, side=side)
         twist_splits = split_forearm_twist(twist_angle, side=side, rest_rig=rest_rig)
-        u_f = normalize(forearm_vec)
+        max_distal_twist = math.radians(25.0)
         for bone_name, angle in twist_splits.items():
-            results[bone_name] = _rodrigues(u_f, angle)
+            clamped_angle = (
+                float(np.clip(angle, -max_distal_twist, max_distal_twist))
+                if motion is not None and "Twist" in bone_name
+                else angle
+            )
+            results[bone_name] = _rodrigues(local_shaft, clamped_angle)
 
         # 3. 3-DoF Wrist orientation
         r_wrist = solve_wrist_rotations(lms, side, rest_rig=rest_rig)
@@ -431,3 +512,54 @@ def solve_hand_and_finger_rotations(
         results = {k: v for k, v in results.items() if k in rig_bone_set}
 
     return results
+
+
+def get_athletic_guard_rotations(
+    side: str, rest_rig: HumanoidRig | None = None
+) -> dict[str, np.ndarray]:
+    """Generate canonical athletic guard rest curl posture for all 15 phalanges.
+
+    Produces non-zero natural flexion:
+    - Metacarpophalangeal (MCP) joints: ~30 deg flexion
+    - Proximal interphalangeal (PIP) joints: ~45 deg flexion
+    - Distal interphalangeal (DIP) joints: ~25 deg flexion
+    - Pollex (Thumb) joints: ~15 deg opposition, ~20-25 deg flexion
+    Every finger joint exhibits curl > 15.0 deg.
+    """
+    side_cap = "Left" if "left" in side.lower() else "Right"
+    n_palm_local = np.array([0.0, -1.0, 0.0], dtype=np.float64)
+    u_lat_local = (
+        np.array([0.0, 0.0, -1.0], dtype=np.float64)
+        if side_cap == "Left"
+        else np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    )
+
+    guard_configs = {
+        "Index": (GUARD_CURL_MCP_RAD, GUARD_CURL_PIP_RAD, GUARD_CURL_DIP_RAD, 0.0),
+        "Middle": (GUARD_CURL_MCP_RAD, GUARD_CURL_PIP_RAD, GUARD_CURL_DIP_RAD, 0.0),
+        "Ring": (math.radians(32.0), math.radians(48.0), GUARD_CURL_DIP_RAD, math.radians(-2.0)),
+        "Pinky": (math.radians(35.0), math.radians(50.0), GUARD_CURL_DIP_RAD, math.radians(-4.0)),
+    }
+
+    rotations: dict[str, np.ndarray] = {}
+    for finger, (c1, c2, c3, splay) in guard_configs.items():
+        r1 = _rodrigues(n_palm_local, splay) @ _rodrigues(u_lat_local, c1)
+        r2 = _rodrigues(u_lat_local, c2)
+        r3 = _rodrigues(u_lat_local, c3)
+        rotations[f"rig:{side_cap}Hand{finger}1"] = r1
+        rotations[f"rig:{side_cap}Hand{finger}2"] = r2
+        rotations[f"rig:{side_cap}Hand{finger}3"] = r3
+
+    # Pollex (Thumb)
+    r_th1 = _rodrigues(n_palm_local, GUARD_THUMB_OPP_RAD) @ _rodrigues(u_lat_local, GUARD_THUMB_CMC_RAD)
+    r_th2 = _rodrigues(u_lat_local, GUARD_THUMB_MCP_RAD)
+    r_th3 = _rodrigues(u_lat_local, GUARD_THUMB_IP_RAD)
+    rotations[f"rig:{side_cap}HandThumb1"] = r_th1
+    rotations[f"rig:{side_cap}HandThumb2"] = r_th2
+    rotations[f"rig:{side_cap}HandThumb3"] = r_th3
+
+    if rest_rig is not None and hasattr(rest_rig, "bones"):
+        rig_bone_set = set(rest_rig.bones.keys())
+        rotations = {k: v for k, v in rotations.items() if k in rig_bone_set}
+
+    return rotations
