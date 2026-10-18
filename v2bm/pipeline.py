@@ -207,6 +207,58 @@ def run_pipeline(
         motion: HumanMotion = load_human_motion(motion_npz)
         print(f"human motion   {motion.n_frames} frames @ {motion.fps:g} fps")
 
+        # Stage: Hand Landmark Extraction
+        hand_data = None
+        try:
+            from .hand_extract import MediaPipeHandExtractor
+            if extract_video is not None:
+                stage = "hand_extract"
+                writer.emit("hand_extract", 0.45, "Extracting hand landmarks")
+                if verbose:
+                    print(f"extracting hand landmarks from {extract_video.name}")
+                hand_extractor = MediaPipeHandExtractor()
+                hand_data = hand_extractor.extract_video(
+                    extract_video,
+                    pose_motion=motion,
+                    progress_callback=lambda p: writer.emit(
+                        "hand_extract", 0.45 + 0.20 * p, "Extracting hand landmarks"
+                    ),
+                )
+                hand_extractor.close()
+            elif image is not None:
+                stage = "hand_extract"
+                writer.emit("hand_extract", 0.45, "Extracting hand landmarks")
+                import cv2
+                from .hand_extract import ExtractedHandMotion
+                img_bgr = cv2.imread(str(image))
+                if img_bgr is not None:
+                    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                    hand_extractor = MediaPipeHandExtractor()
+                    p2d = (
+                        motion.screen_landmarks[0]
+                        if (motion.screen_landmarks is not None and len(motion.screen_landmarks) > 0)
+                        else None
+                    )
+                    single_res = hand_extractor.extract_frame(img_rgb, pose_landmarks_2d=p2d)
+                    hand_extractor.close()
+                    l_lms = single_res["left"].landmarks_3d if single_res["left"] is not None else np.zeros((21, 3))
+                    r_lms = single_res["right"].landmarks_3d if single_res["right"] is not None else np.zeros((21, 3))
+                    l_scr = single_res["left"].landmarks_screen if single_res["left"] is not None else np.zeros((21, 3))
+                    r_scr = single_res["right"].landmarks_screen if single_res["right"] is not None else np.zeros((21, 3))
+                    hand_data = ExtractedHandMotion(
+                        left_landmarks_3d=np.repeat(l_lms[np.newaxis, ...], motion.n_frames, axis=0),
+                        right_landmarks_3d=np.repeat(r_lms[np.newaxis, ...], motion.n_frames, axis=0),
+                        left_screen=np.repeat(l_scr[np.newaxis, ...], motion.n_frames, axis=0),
+                        right_screen=np.repeat(r_scr[np.newaxis, ...], motion.n_frames, axis=0),
+                        left_present=np.repeat(single_res["left"] is not None, motion.n_frames),
+                        right_present=np.repeat(single_res["right"] is not None, motion.n_frames),
+                        fps=float(motion.fps),
+                    )
+        except Exception as exc:  # noqa: BLE001
+            if verbose:
+                print(f"hand extraction warning: {exc}")
+            hand_data = None
+
         stage = "retarget"
         writer.emit("retarget", 0.70, "Retargeting animation")
         print(f"calibrating rig {rig.name}")
@@ -233,6 +285,8 @@ def run_pipeline(
             target_morph_names=target_morph_names,
             verbose=verbose,
             device=active_device,
+            hand_data=hand_data,
+            enable_foot_ik=True,
         )
         pin_character_mesh_to_ground(asset, anim, device=active_device)
 
@@ -343,6 +397,7 @@ def _failed_progress(stage: str) -> float:
         "preflight": 0.05,
         "isolate": 0.08,
         "extract": 0.15,
+        "hand_extract": 0.45,
         "retarget": 0.70,
         "export": 0.85,
         "preview": 0.90,

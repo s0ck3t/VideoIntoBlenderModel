@@ -10,11 +10,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
 from .kinematics import forward_kinematics, human_to_rig, world_positions_m
 from .retarget import joint_rig, retarget_one_frame
+from .foot_ik import apply_foot_ik
+from .hand_retarget import solve_hand_and_finger_rotations
 from .skinned_mesh import HumanoidRigAsset, bone_palette, skin_mesh
 from .rig_retarget import RigMapping
 
@@ -231,6 +234,8 @@ def build_animation(
     target_morph_names: list[str] | None = None,
     verbose: bool = True,
     device: str = "cpu",
+    hand_data: Any | None = None,
+    enable_foot_ik: bool = True,
 ) -> RetargetedAnimation:
     """Retarget Human -> Humanoid, then carry the rest-relative motion onto the rig."""
     skel = mapping.skeleton_rig
@@ -248,9 +253,39 @@ def build_animation(
     r_prev = q_prev = None
     raw_r_skeleton: list[dict[str, np.ndarray]] = []
     hips_list: list[np.ndarray] = []
+    h_source = hand_data if hand_data is not None else getattr(motion, "hand_data", None)
 
     for i, frame in enumerate(frames):
         result = retarget_one_frame(skel, motion, frame, prev_r_anim=r_prev, prev_q_anim=q_prev)
+
+        # Integrate hand and finger retargeting when landmarks are available
+        if h_source is not None:
+            l_lms = None
+            r_lms = None
+            if hasattr(h_source, "left_landmarks_3d") and hasattr(h_source, "left_present"):
+                l_lms = h_source.left_landmarks_3d[frame] if h_source.left_present[frame] else None
+                r_lms = h_source.right_landmarks_3d[frame] if h_source.right_present[frame] else None
+            elif hasattr(h_source, "landmarks") and isinstance(h_source.landmarks, dict):
+                l_val = h_source.landmarks.get("left")
+                r_val = h_source.landmarks.get("right")
+                l_lms = l_val[frame] if l_val is not None and len(l_val) > frame else l_val
+                r_lms = r_val[frame] if r_val is not None and len(r_val) > frame else r_val
+            elif isinstance(h_source, dict):
+                l_val = h_source.get("left")
+                r_val = h_source.get("right")
+                l_lms = l_val[frame] if l_val is not None and len(l_val) > frame else l_val
+                r_lms = r_val[frame] if r_val is not None and len(r_val) > frame else r_val
+
+            if l_lms is not None or r_lms is not None:
+                h_rots = solve_hand_and_finger_rotations(
+                    hand_data_left=l_lms,
+                    hand_data_right=r_lms,
+                    motion=motion,
+                    frame=frame,
+                    rest_rig=None,
+                )
+                result.r_anim.update(h_rots)
+
         hips_cm = compute_hips_translation_cm(motion, frame, skel)
         raw_r_skeleton.append(result.r_anim)
         hips_list.append(hips_cm)
@@ -267,6 +302,17 @@ def build_animation(
     smoothed_r_skeleton = _smooth_rotation_trajectories(
         raw_r_skeleton, list(mapping.controlled), device=device
     )
+
+    # Apply stance foot contact locking and closed-form 2-bone leg IK
+    if enable_foot_ik:
+        smoothed_r_skeleton = apply_foot_ik(
+            motion,
+            smoothed_r_skeleton,
+            hips_list,
+            skel,
+            fps=float(motion.fps),
+            enabled=enable_foot_ik,
+        )
 
     rest_skel_pos = world_positions_m(skel, forward_kinematics(skel, {}))
     rest_sole_skel_m = max(0.0, min(float(p[1]) for p in rest_skel_pos.values()))
@@ -290,6 +336,9 @@ def build_animation(
         raw_y_skel_cm[i] = (-min_rel_y_skel + rest_sole_skel_m) / skel.meters_per_unit
 
         r_rig = mapping.apply_rest_relative_rotations(r_skel)
+        for b_name, b_rot in r_skel.items():
+            if b_name not in r_rig and b_name in mapping.target_rig.bones:
+                r_rig[b_name] = b_rot
         hips_rig = mapping.hips_translation_cm(hips_cm)
         rig_zero = mapping.humanoid_rig_positions_m(r_rig, np.zeros(3))
         min_rel_y_rig = min(float(p[1]) for p in rig_zero.values())

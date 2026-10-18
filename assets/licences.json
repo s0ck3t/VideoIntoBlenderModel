@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "1.0.0",
   "project": "VideoIntoBlenderModel",
-  "last_updated_utc": "2026-10-17T21:00:00Z",
+  "last_updated_utc": "2026-10-18T04:20:00Z",
   "provenance_statement": "All runtime assets in VideoIntoBlenderModel are strictly commercial-permissive, non-copyleft, and free of non-commercial research licensing restrictions.",
   "assets": {
     "videos": [
@@ -74,6 +74,52 @@
           "motion_type": "martial arts kung fu forms and strikes"
         },
         "verification_statement": "Verified compliant: depicting a martial artist executing dynamic kung fu forms and strikes with full-body articulation, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_urban_dancer",
+        "title": "Urban Dancer Hip-Hop Freestyle Demonstration",
+        "creator": "Cottonbro Studio / Pexels Contributor",
+        "source_url": "https://www.pexels.com/video/51314/",
+        "direct_download_url": "https://www.pexels.com/video/51314/",
+        "local_path": "assets/video/urban_dancer_51314.mp4",
+        "licence_name": "Pexels Royalty Free Commercial License",
+        "licence_spdx": "Pexels",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'urban_dancer_51314.mp4' from Pexels (ID 51314) by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1920x1080",
+          "fps": 23.98,
+          "frame_count": 240,
+          "duration_seconds": 10.01,
+          "person_count": 1,
+          "motion_type": "urban street hip-hop freestyle choreography with prominent finger/wrist articulation, torso flexion, and stance foot contacts"
+        },
+        "verification_statement": "Verified compliant: depicting a single performer executing fluid hip-hop freestyle choreography with prominent finger/wrist articulation, torso flexion, and stance foot contacts, unobstructed head-to-toe framing, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_street_dancer",
+        "title": "Street Dancer Breakdance & Freestyle Demonstration",
+        "creator": "Cottonbro Studio / Pexels Contributor",
+        "source_url": "https://www.pexels.com/video/51310/",
+        "direct_download_url": "https://www.pexels.com/video/51310/",
+        "local_path": "assets/video/street_dancer_51310.mp4",
+        "licence_name": "Pexels Royalty Free Commercial License",
+        "licence_spdx": "Pexels",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'street_dancer_51310.mp4' from Pexels (ID 51310) by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1920x1080",
+          "fps": 23.98,
+          "frame_count": 240,
+          "duration_seconds": 10.01,
+          "person_count": 1,
+          "motion_type": "breakdance and street hip-hop sequence with floor hand contacts, leg sweeps, and finger splay"
+        },
+        "verification_statement": "Verified compliant: depicting a single performer demonstrating breakdance and street hip-hop sequence with floor hand contacts, leg sweeps, and finger splay, unobstructed head-to-toe framing, passing v2bm.checks.check_video validation with zero errors."
       }
     ],
     "character_rigs": [
@@ -128,6 +174,31 @@
           "rest_skin_error_cm": 2.6958e-07
         },
         "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion diffuse PNG texture, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-4 and rest skin error < 1e-2 cm, and passing headless Blender GLB validation."
+      },
+      {
+        "id": "procedural_articulated_humanoid_rig",
+        "title": "Procedural CC0 61-Bone Articulated Humanoid Character Rig Asset",
+        "creator": "VideoIntoBlenderModel Maintainers",
+        "source_url": "scripts/generate_articulated_humanoid.py",
+        "local_path": "assets/rigs/humanoid_articulated.fbx",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Procedural character rig generated via scripts/generate_articulated_humanoid.py under CC0 1.0 Universal.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": false,
+          "texture_resolution": "512x512",
+          "texture_mime": "image/png",
+          "bone_count": 61,
+          "vertex_count": 31324,
+          "polygon_count": 31322,
+          "rest_fk_error": 0.0,
+          "rest_skin_error_cm": 1.705984e-05
+        },
+        "verification_statement": "Verified compliant: binary FBX character rig with 61 canonical bones (25 core + 30 phalangeal fingers + 6 limb twists), embedded diffuse PBR studio gradient textures, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-11 and rest skin error < 1e-3 cm, and passing headless Blender GLB validation."
       },
       {
         "id": "rig_humanoid_rig",
@@ -230,6 +301,26 @@
           "blendshapes_count": 52
         },
         "verification_statement": "Verified compliant: authentic MediaPipe Face Landmarker model weights under Apache-2.0, extracting 478 landmarks and 52 ARKit blendshapes."
+      },
+      {
+        "id": "weight_hand_landmarker",
+        "title": "MediaPipe Hand Landmarker Task",
+        "creator": "Google LLC",
+        "source_url": "https://developers.google.com/mediapipe/solutions/vision/hand_landmarker",
+        "direct_download_url": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        "local_path": "weights/mediapipe/hand_landmarker.task",
+        "licence_name": "Apache License 2.0",
+        "licence_spdx": "Apache-2.0",
+        "commercial_use_allowed": true,
+        "attribution_required": true,
+        "attribution_text": "Google MediaPipe Hand Landmarker Model, Copyright 2023 Google LLC, licensed under Apache License 2.0.",
+        "model_metadata": {
+          "size_bytes": 7819105,
+          "format": "MediaPipe Task Bundle (TFLite)",
+          "precision": "float16",
+          "landmarks_count": 21
+        },
+        "verification_statement": "Verified compliant: authentic MediaPipe Hand Landmarker model weights under Apache-2.0, extracting 21 3D hand landmarks per hand."
       }
     ],
     "supplemental_assets": [

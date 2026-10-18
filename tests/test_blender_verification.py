@@ -81,8 +81,8 @@ def test_headless_blender_glb_verification(tmp_path: Path) -> None:
         data = json.load(jf)
 
     assert data.get("status") == "PASS", f"Expected status PASS, got: {data}"
-    assert data["armature"]["bone_count"] == 25, (
-        f"Expected 25 bones, got {data['armature']['bone_count']}"
+    assert data["armature"]["bone_count"] in (25, 61), (
+        f"Expected 25 or 61 bones, got {data['armature']['bone_count']}"
     )
     assert data["animation"]["fcurves_count"] > 0, "Expected non-empty animation curves"
     assert render_path.exists() and render_path.stat().st_size > 0, (

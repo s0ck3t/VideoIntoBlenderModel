@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .fbx_skeleton import FINGER_BONE_SUFFIXES, TWIST_BONE_SUFFIXES
 from .kinematics import HumanoidRig, forward_kinematics, world_positions_m
 from .skinned_mesh import load_full_rig
 from .tpose_calibration import (
@@ -39,7 +40,7 @@ from .tpose_calibration import (
 
 # Bones whose motion is authored by the validated Human → Humanoid retarget.
 # Anatomical LEFT stays LEFT and RIGHT stays RIGHT.
-CONTROLLED_BONES = (
+CORE_CONTROLLED_BONES = (
     "rig:Hips",
     "rig:Spine",
     "rig:Spine1",
@@ -62,6 +63,12 @@ CONTROLLED_BONES = (
     "rig:RightLeg",
     "rig:RightFoot",
     "rig:RightToeBase",
+)
+
+CONTROLLED_BONES = (
+    CORE_CONTROLLED_BONES
+    + tuple(f"rig:{s}" for s in FINGER_BONE_SUFFIXES)
+    + tuple(f"rig:{s}" for s in TWIST_BONE_SUFFIXES)
 )
 
 
