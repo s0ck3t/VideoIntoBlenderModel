@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "version": "1.0.0",
   "project": "VideoIntoBlenderModel",
-  "last_updated_utc": "2026-10-15T16:00:00Z",
+  "last_updated_utc": "2026-10-17T20:55:00Z",
   "provenance_statement": "All runtime assets in VideoIntoBlenderModel are strictly commercial-permissive, non-copyleft, and free of non-commercial research licensing restrictions.",
   "assets": {
     "videos": [
@@ -74,6 +74,52 @@
           "motion_type": "martial arts kung fu forms and strikes"
         },
         "verification_statement": "Verified compliant: depicting a martial artist executing dynamic kung fu forms and strikes with full-body articulation, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_urban_dancer",
+        "title": "Urban Dancer Hip-Hop Freestyle Demonstration",
+        "creator": "Cottonbro Studio / Pexels Contributor",
+        "source_url": "https://www.pexels.com/video/51314/",
+        "direct_download_url": "https://www.pexels.com/video/51314/",
+        "local_path": "assets/video/urban_dancer_51314.mp4",
+        "licence_name": "Pexels Royalty Free Commercial License",
+        "licence_spdx": "Pexels",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'urban_dancer_51314.mp4' from Pexels (ID 51314) by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1920x1080",
+          "fps": 23.98,
+          "frame_count": 240,
+          "duration_seconds": 10.01,
+          "person_count": 1,
+          "motion_type": "urban street hip-hop freestyle choreography with prominent finger/wrist articulation, torso flexion, and stance foot contacts"
+        },
+        "verification_statement": "Verified compliant: depicting a single performer executing fluid hip-hop freestyle choreography with prominent finger/wrist articulation, torso flexion, and stance foot contacts, unobstructed head-to-toe framing, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_street_dancer",
+        "title": "Street Dancer Breakdance & Freestyle Demonstration",
+        "creator": "Cottonbro Studio / Pexels Contributor",
+        "source_url": "https://www.pexels.com/video/51310/",
+        "direct_download_url": "https://www.pexels.com/video/51310/",
+        "local_path": "assets/video/street_dancer_51310.mp4",
+        "licence_name": "Pexels Royalty Free Commercial License",
+        "licence_spdx": "Pexels",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'street_dancer_51310.mp4' from Pexels (ID 51310) by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1920x1080",
+          "fps": 23.98,
+          "frame_count": 240,
+          "duration_seconds": 10.01,
+          "person_count": 1,
+          "motion_type": "breakdance and street hip-hop sequence with floor hand contacts, leg sweeps, and finger splay"
+        },
+        "verification_statement": "Verified compliant: depicting a single performer demonstrating breakdance and street hip-hop sequence with floor hand contacts, leg sweeps, and finger splay, unobstructed head-to-toe framing, passing v2bm.checks.check_video validation with zero errors."
       }
     ],
     "character_rigs": [
@@ -128,6 +174,31 @@
           "rest_skin_error_cm": 2.6958e-07
         },
         "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion diffuse PNG texture, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-4 and rest skin error < 1e-2 cm, and passing headless Blender GLB validation."
+      },
+      {
+        "id": "procedural_articulated_humanoid_rig",
+        "title": "Procedural CC0 61-Bone Articulated Humanoid Character Rig Asset",
+        "creator": "VideoIntoBlenderModel Maintainers",
+        "source_url": "scripts/generate_articulated_humanoid.py",
+        "local_path": "assets/rigs/humanoid_articulated.fbx",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Procedural character rig generated via scripts/generate_articulated_humanoid.py under CC0 1.0 Universal.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": false,
+          "texture_resolution": "512x512",
+          "texture_mime": "image/png",
+          "bone_count": 61,
+          "vertex_count": 31324,
+          "polygon_count": 31322,
+          "rest_fk_error": 0.0,
+          "rest_skin_error_cm": 1.705984e-05
+        },
+        "verification_statement": "Verified compliant: binary FBX character rig with 61 canonical bones (25 core + 30 phalangeal fingers + 6 limb twists), embedded diffuse PBR studio gradient textures, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-11 and rest skin error < 1e-3 cm, and passing headless Blender GLB validation."
       }
     ],
     "supplemental_assets": [
@@ -154,6 +225,18 @@
         "commercial_use_allowed": true,
         "attribution_required": false,
         "attribution_text": "Procedural character rig generated via scripts/generate_humanoid_rig.py under CC0 1.0 Universal."
+      },
+      {
+        "id": "still_urban_dancer_pose",
+        "title": "Urban Dancer Static 3D Pose Demonstration",
+        "creator": "Cottonbro Studio / Pexels Contributor",
+        "source_url": "https://www.pexels.com/video/51314/",
+        "local_path": "assets/image/urban_dancer_pose.png",
+        "licence_name": "Pexels Royalty Free Commercial License",
+        "licence_spdx": "Pexels",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Image: 'urban_dancer_pose.png' derived from Pexels video 51314 by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence."
       }
     ]
   }

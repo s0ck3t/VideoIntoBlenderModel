@@ -13,10 +13,14 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 | `video_breakdancer_kickup` | Video | Breakdance Kick-up Demonstration | VincaniTV | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Kick-up.webm) | `assets/video/breakdancer_kickup.mp4` | [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/) | Permitted | Yes |
 | `video_breakdancer_6step` | Video | Six-Step Breakdance Demonstration | Neil Sweeney | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:6-step_example.webm) | `assets/video/breakdancer_6step.mp4` | [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/) | Permitted | Yes |
 | `video_kung_fu_haikou` | Video | Kung Fu Form Demonstration | Anna Frodesiak | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Kung_fu_at_Haikou_People%27s_Park.ogv) | `assets/video/kung_fu_haikou.mp4` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
+| `video_urban_dancer` | Video | Urban Dancer Hip-Hop Freestyle Demonstration | Cottonbro Studio / Pexels Contributor | [Pexels](https://www.pexels.com/video/51314/) | `assets/video/urban_dancer_51314.mp4` | [Pexels](https://www.pexels.com/license/) | Permitted | Optional |
+| `video_street_dancer` | Video | Street Dancer Breakdance & Freestyle Demonstration | Cottonbro Studio / Pexels Contributor | [Pexels](https://www.pexels.com/video/51310/) | `assets/video/street_dancer_51310.mp4` | [Pexels](https://www.pexels.com/license/) | Permitted | Optional |
 | `rig_kenney_skater` | Rig | Animated Characters Protagonists — Skater Male | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-protagonists) | `assets/rigs/kenney_skater.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
 | `rig_kenney_female` | Rig | Animated Characters Retro — Human Female | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-retro) | `assets/rigs/kenney_female.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
+| `procedural_articulated_humanoid_rig` | Rig | Procedural CC0 61-Bone Articulated Humanoid Rig Asset | Project Maintainers | Procedural Blender script | `assets/rigs/humanoid_articulated.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
+| `procedural_humanoid_rig` | Rig | Procedural CC0 25-Bone Humanoid Rig Asset | Project Maintainers | Procedural Blender script | `assets/rigs/humanoid_rig.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
+| `still_urban_dancer_pose` | Image | Urban Dancer Static 3D Pose Demonstration | Cottonbro Studio / Pexels Contributor | [Pexels](https://www.pexels.com/video/51314/) | `assets/image/urban_dancer_pose.png` | [Pexels](https://www.pexels.com/license/) | Permitted | Optional |
 | `demo_video` | Video | CLI Test Demonstration Video | VincaniTV / Maintainers | Derived from Wikimedia Commons | `docs/assets/demo.mp4` | [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/) | Permitted | Yes |
-| `procedural_humanoid_rig` | Rig | Procedural CC0 Humanoid Rig Asset | Project Maintainers | Procedural Blender script | `assets/rigs/humanoid_rig.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 
 ---
 
@@ -89,6 +93,50 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 
 ---
 
+### 2.4. Urban Dancer Hip-Hop Freestyle Demonstration (`assets/video/urban_dancer_51314.mp4`)
+
+- **Asset Title**: Urban Dancer Hip-Hop Freestyle Demonstration
+- **Creator / Author**: Cottonbro Studio / Pexels Contributor
+- **Source URL**: [https://www.pexels.com/video/51314/](https://www.pexels.com/video/51314/)
+- **Direct Asset URL**: [https://www.pexels.com/video/51314/](https://www.pexels.com/video/51314/)
+- **Local File Path**: `assets/video/urban_dancer_51314.mp4`
+- **Licence**: Pexels Royalty-Free Commercial Licence (`Pexels`)
+- **Licence Terms Summary**: All videos on Pexels are free to use. Attribution is not required. Giving credit to the creator or Pexels is appreciated but not necessary. You can modify the videos.
+- **Commercial-Use Verification**: Commercial and non-commercial utilisation is explicitly permitted worldwide without royalty fees or licences renewal under Pexels terms.
+- **Attribution Statement**:
+  > Video: "urban_dancer_51314.mp4" from Pexels (ID 51314) by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.
+- **Technical Characteristics**:
+  - Container: MP4 (H.264 / MPEG-4 AVC)
+  - Resolution: 1920×1080 (Full High Definition)
+  - Frame Rate: 23.98 fps
+  - Frame Count: 240 frames (duration: 10.01 seconds)
+  - Subject Matter: Single urban street dancer executing fluid hip-hop freestyle choreography with prominent finger/wrist articulation, torso flexion, and clear foot stance contacts.
+  - Quality Assurance: Passes `v2bm.checks.check_video()` with zero warnings or errors.
+
+---
+
+### 2.5. Street Dancer Breakdance & Freestyle Demonstration (`assets/video/street_dancer_51310.mp4`)
+
+- **Asset Title**: Street Dancer Breakdance & Freestyle Demonstration
+- **Creator / Author**: Cottonbro Studio / Pexels Contributor
+- **Source URL**: [https://www.pexels.com/video/51310/](https://www.pexels.com/video/51310/)
+- **Direct Asset URL**: [https://www.pexels.com/video/51310/](https://www.pexels.com/video/51310/)
+- **Local File Path**: `assets/video/street_dancer_51310.mp4`
+- **Licence**: Pexels Royalty-Free Commercial Licence (`Pexels`)
+- **Licence Terms Summary**: Free to use for commercial and non-commercial projects. No attribution required. Modification and adaptation permitted.
+- **Commercial-Use Verification**: Verified royalty-free permissive licence permitting commercial use.
+- **Attribution Statement**:
+  > Video: "street_dancer_51310.mp4" from Pexels (ID 51310) by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.
+- **Technical Characteristics**:
+  - Container: MP4 (H.264 / MPEG-4 AVC)
+  - Resolution: 1920×1080 (Full High Definition)
+  - Frame Rate: 23.98 fps
+  - Frame Count: 240 frames (duration: 10.01 seconds)
+  - Subject Matter: Single street performer demonstrating breakdance and street hip-hop sequences with floor hand contacts, leg sweeps, and finger splay.
+  - Quality Assurance: Passes `v2bm.checks.check_video()` with zero warnings or errors.
+
+---
+
 ## 3. Clothed & Textured Open-Licence Character Rigs
 
 ### 3.1. Kenney Animated Characters Protagonists — Skater Male (`assets/rigs/kenney_skater.fbx`)
@@ -139,7 +187,81 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 
 ---
 
-## 4. Machine-Readable Manifest Synchronisation
+### 3.3. Procedural CC0 61-Bone Articulated Humanoid Character Rig (`assets/rigs/humanoid_articulated.fbx`)
+
+- **Asset Title**: Procedural CC0 61-Bone Articulated Humanoid Character Rig Asset
+- **Creator / Author**: VideoIntoBlenderModel Maintainers
+- **Source URL**: `scripts/generate_articulated_humanoid.py`
+- **Local File Path**: `assets/rigs/humanoid_articulated.fbx`
+- **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`) Public Domain Dedication
+- **Licence Terms Summary**: Dedicated to the public domain worldwide under CC0 1.0 Universal. Unrestricted commercial and non-commercial utilisation without requirement for attribution or royalties.
+- **Commercial-Use Verification**: Authored entirely in-house using procedural Python geometry generation in Blender 5.2.2 LTS; 100% free of external copyrighted meshes or restricted dependencies.
+- **Attribution Statement**:
+  > Character model: Procedural 61-bone articulated humanoid character rig generated via scripts/generate_articulated_humanoid.py under Creative Commons Zero (CC0 1.0 Universal).
+- **Technical Characteristics**:
+  - Format: Binary FBX (Kaydara 7.4.0 format)
+  - Armature Hierarchy: Exactly 61 canonical bones (25 core bones + 30 phalangeal finger bones + 6 limb twist bones) with uniform $+Y$ edit bone tail orientation guaranteeing identity rest rotation matrix and zero PreRotation anomalies
+  - Mesh Topology: Dual skinned meshes (`Alpha_Surface` continuous organic manifold with 5 articulated digits per hand, voxel remeshed at 0.90 cm, 29,404 vertices; `Alpha_Joints` 12 articulated accent rings, 1,920 vertices)
+  - Texture Mapping: Conformal per-vertex UV mapping with embedded 512×512 PNG studio gradient textures (`Articulated_Surface_Tex` and `Articulated_Joints_Tex`)
+  - Kinematic Guarantees:
+    - Rest Forward Kinematics (FK) Error: $0.000 \times 10^{-12}$ (exact machine precision)
+    - Rest Linear Blend Skinning Error: $1.706 \times 10^{-5}\text{ cm}$ (well within the $< 10^{-3}\text{ cm}$ tolerance threshold)
+    - Partition of Unity: Maximum deviation across all 61 bone weights is identically $0.000\text{e}+00$
+  - Quality Assurance: Passes `v2bm.checks.check_rig()`, exports valid textured glTF 2.0 (`.glb`), and passes headless Blender 5.2.2 LTS automated verification (`scripts/verify_blender_glb.py`).
+
+---
+
+### 3.4. Procedural CC0 25-Bone Humanoid Character Rig (`assets/rigs/humanoid_rig.fbx`)
+
+- **Asset Title**: Procedural CC0 Humanoid Rig Asset
+- **Creator / Author**: VideoIntoBlenderModel Maintainers
+- **Source URL**: `scripts/generate_humanoid_rig.py`
+- **Local File Path**: `assets/rigs/humanoid_rig.fbx`
+- **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`) Public Domain Dedication
+- **Licence Terms Summary**: Dedicated to the public domain under Creative Commons Zero (CC0 1.0 Universal).
+- **Attribution Statement**:
+  > Character model: Procedural character rig generated via scripts/generate_humanoid_rig.py under Creative Commons Zero (CC0 1.0 Universal).
+- **Technical Characteristics**:
+  - Format: Binary FBX (Kaydara 7.4.0 format)
+  - Armature Hierarchy: 25 core humanoid bones rooted at `rig:Hips`
+  - Mesh Topology: Dual skinned meshes (`Alpha_Surface` 24,082 vertices; `Alpha_Joints` 1,920 vertices)
+  - Texture Mapping: Embedded 512×512 PNG diffuse studio gradient textures
+  - Kinematic Guarantees: Rest FK error $< 10^{-12}$, rest skinning error $< 10^{-3}\text{ cm}$
+
+---
+
+## 4. Supplemental Static Media & Demonstrations
+
+### 4.1. Urban Dancer Static 3D Pose Demonstration (`assets/image/urban_dancer_pose.png`)
+
+- **Asset Title**: Urban Dancer Static 3D Pose Demonstration
+- **Creator / Author**: Cottonbro Studio / Pexels Contributor
+- **Source URL**: [https://www.pexels.com/video/51314/](https://www.pexels.com/video/51314/)
+- **Local File Path**: `assets/image/urban_dancer_pose.png`
+- **Licence**: Pexels Royalty-Free Commercial Licence (`Pexels`)
+- **Licence Terms Summary**: Free for commercial and non-commercial use. No attribution required.
+- **Attribution Statement**:
+  > Image: "urban_dancer_pose.png" derived from Pexels video 51314 by Cottonbro Studio, licensed under the Pexels royalty-free commercial licence.
+- **Technical Characteristics**:
+  - Format: PNG (1080×1920)
+  - Subject Matter: Single human dancer frozen in dynamic athletic posture for still 3D pose extraction (`--image`).
+  - Quality Assurance: Passes `v2bm.checks.check_image()` with zero errors.
+
+---
+
+### 4.2. CLI Test Demonstration Video (`docs/assets/demo.mp4`)
+
+- **Asset Title**: CLI Test Demonstration Video
+- **Creator / Author**: VincaniTV / Maintainers
+- **Source URL**: [https://commons.wikimedia.org/wiki/File:Kick-up.webm](https://commons.wikimedia.org/wiki/File:Kick-up.webm)
+- **Local File Path**: `docs/assets/demo.mp4`
+- **Licence**: Creative Commons Attribution 3.0 Unported (`CC-BY-3.0`)
+- **Attribution Statement**:
+  > Derived from "Kick-up.webm" by VincaniTV, licensed under CC BY 3.0 Unported.
+
+---
+
+## 5. Machine-Readable Manifest Synchronisation
 
 The metadata in this document is synchronously mirrored in machine-readable JSON format at:
 ```text

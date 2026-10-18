@@ -20,13 +20,18 @@ import pytest
 
 from v2bm import checks
 from v2bm.rig.fbx_skeleton import (
+    ALL_HUMANOID_BONE_SUFFIXES,
     CORE_BONE_SUFFIXES,
+    FINGER_BONE_SUFFIXES,
     HUMANOID_BONE_ALIASES,
+    TWIST_BONE_SUFFIXES,
     bone_suffix,
     canonicalize_bone_name,
     is_core_bone,
+    is_humanoid_bone,
     normalize_rig_prefix,
 )
+from v2bm.rig.rig_retarget import CONTROLLED_BONES, CORE_CONTROLLED_BONES, RigMapping
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HUMANOID_RIG_FBX = REPO_ROOT / "assets" / "rigs" / "humanoid_rig.fbx"
@@ -264,11 +269,16 @@ def test_case_insensitivity() -> None:
 
 
 def test_non_core_limbs_retained() -> None:
-    """Non-core bones (e.g. finger bones, props, accessories) are not incorrectly mapped."""
-    assert canonicalize_bone_name("mixamorig:LeftHandThumb1") == "LeftHandThumb1"
-    assert is_core_bone("mixamorig:LeftHandThumb1") is False
-    assert is_core_bone("Camera") is False
+    """Non-humanoid nodes (e.g. props, accessories, cameras) are retained without false humanoid mapping."""
+    assert canonicalize_bone_name("mixamorig:Sword_Prop") == "Sword_Prop"
     assert is_core_bone("Sword_Prop") is False
+    assert is_humanoid_bone("Sword_Prop") is False
+    assert canonicalize_bone_name("Camera") == "Camera"
+    assert is_core_bone("Camera") is False
+    assert is_humanoid_bone("Camera") is False
+    assert canonicalize_bone_name("bip01_weapon") == "weapon"
+    assert is_core_bone("weapon") is False
+    assert is_humanoid_bone("weapon") is False
 
 
 def test_check_rig_with_humanoid_rig_asset() -> None:
@@ -355,4 +365,208 @@ def test_unit_to_meters_runtime_auto_calibration() -> None:
     mm_pts = [np.array([0.0, 0.0, 0.0]), np.array([0.0, 1750.0, 0.0])]
     mpu_mm = unit_to_meters({"UnitScaleFactor": 1.0}, mm_pts)
     assert np.isclose(1750.0 * mpu_mm, CANONICAL_HUMANOID_SPAN_M)
+
+
+def test_finger_bone_aliases() -> None:
+    """Verify 30 phalangeal finger bones across Mixamo, Blender dot-notation, VRM/Unity, MakeHuman, Kenney, and 3ds Max."""
+    # Mixamo
+    for s in FINGER_BONE_SUFFIXES:
+        raw = f"mixamorig:{s}"
+        assert canonicalize_bone_name(raw) == f"rig:{s}"
+        assert is_humanoid_bone(raw) is True
+        assert is_core_bone(raw) is False
+
+    # Blender dot-notation
+    blender_fingers = {
+        "thumb.01.l": "rig:LeftHandThumb1",
+        "thumb.02.l": "rig:LeftHandThumb2",
+        "thumb.03.l": "rig:LeftHandThumb3",
+        "f_index.01.l": "rig:LeftHandIndex1",
+        "index.02.l": "rig:LeftHandIndex2",
+        "index.03.l": "rig:LeftHandIndex3",
+        "middle.01.l": "rig:LeftHandMiddle1",
+        "middle.02.l": "rig:LeftHandMiddle2",
+        "middle.03.l": "rig:LeftHandMiddle3",
+        "ring.01.l": "rig:LeftHandRing1",
+        "ring.02.l": "rig:LeftHandRing2",
+        "ring.03.l": "rig:LeftHandRing3",
+        "pinky.01.l": "rig:LeftHandPinky1",
+        "little.02.l": "rig:LeftHandPinky2",
+        "pinky.03.l": "rig:LeftHandPinky3",
+        "thumb.01.r": "rig:RightHandThumb1",
+        "index.01.r": "rig:RightHandIndex1",
+        "middle.01.r": "rig:RightHandMiddle1",
+        "ring.01.r": "rig:RightHandRing1",
+        "pinky.01.r": "rig:RightHandPinky1",
+    }
+    for raw, expected in blender_fingers.items():
+        assert canonicalize_bone_name(raw) == expected
+
+    # VRM / Unity Humanoid
+    vrm_fingers = {
+        "leftThumbProximal": "rig:LeftHandThumb1",
+        "leftThumbIntermediate": "rig:LeftHandThumb2",
+        "leftThumbDistal": "rig:LeftHandThumb3",
+        "leftIndexProximal": "rig:LeftHandIndex1",
+        "leftIndexIntermediate": "rig:LeftHandIndex2",
+        "leftIndexDistal": "rig:LeftHandIndex3",
+        "leftMiddleProximal": "rig:LeftHandMiddle1",
+        "leftRingProximal": "rig:LeftHandRing1",
+        "leftLittleProximal": "rig:LeftHandPinky1",
+        "rightThumbProximal": "rig:RightHandThumb1",
+        "rightIndexProximal": "rig:RightHandIndex1",
+        "rightMiddleProximal": "rig:RightHandMiddle1",
+        "rightRingProximal": "rig:RightHandRing1",
+        "rightLittleProximal": "rig:RightHandPinky1",
+        "J_Bip_L_Thumb1": "rig:LeftHandThumb1",
+        "J_Bip_L_Index1": "rig:LeftHandIndex1",
+        "J_Bip_R_Thumb1": "rig:RightHandThumb1",
+    }
+    for raw, expected in vrm_fingers.items():
+        assert canonicalize_bone_name(raw) == expected
+
+    # MakeHuman / MPFB2
+    makehuman_fingers = {
+        "finger1.1.l": "rig:LeftHandThumb1",
+        "finger1.2.l": "rig:LeftHandThumb2",
+        "finger1.3.l": "rig:LeftHandThumb3",
+        "finger2.1.l": "rig:LeftHandIndex1",
+        "finger3.1.l": "rig:LeftHandMiddle1",
+        "finger4.1.l": "rig:LeftHandRing1",
+        "finger5.1.l": "rig:LeftHandPinky1",
+        "finger1.1.r": "rig:RightHandThumb1",
+        "finger2.1.r": "rig:RightHandIndex1",
+        "finger3.1.r": "rig:RightHandMiddle1",
+        "finger4.1.r": "rig:RightHandRing1",
+        "finger5.1.r": "rig:RightHandPinky1",
+    }
+    for raw, expected in makehuman_fingers.items():
+        assert canonicalize_bone_name(raw) == expected
+
+    # 3ds Max Biped
+    biped_fingers = {
+        "Bip01_L_Finger0": "rig:LeftHandThumb1",
+        "Bip01_L_Finger01": "rig:LeftHandThumb2",
+        "Bip01_L_Finger02": "rig:LeftHandThumb3",
+        "Bip01_L_Finger1": "rig:LeftHandIndex1",
+        "Bip01_L_Finger2": "rig:LeftHandMiddle1",
+        "Bip01_L_Finger3": "rig:LeftHandRing1",
+        "Bip01_L_Finger4": "rig:LeftHandPinky1",
+        "Bip01_R_Finger0": "rig:RightHandThumb1",
+        "Bip01_R_Finger1": "rig:RightHandIndex1",
+        "Bip01_R_Finger2": "rig:RightHandMiddle1",
+        "Bip01_R_Finger3": "rig:RightHandRing1",
+        "Bip01_R_Finger4": "rig:RightHandPinky1",
+    }
+    for raw, expected in biped_fingers.items():
+        assert canonicalize_bone_name(raw) == expected
+
+
+def test_limb_twist_aliases() -> None:
+    """Verify 6 limb-twist bones across Mixamo, Blender, VRM, and Biped conventions."""
+    twist_cases = {
+        "mixamorig:LeftArmTwist": "rig:LeftArmTwist",
+        "arm_twist.l": "rig:LeftArmTwist",
+        "upperarm_twist_l": "rig:LeftArmTwist",
+        "bip01_l_armtwist": "rig:LeftArmTwist",
+        "j_bip_l_armtwist": "rig:LeftArmTwist",
+
+        "mixamorig:RightArmTwist": "rig:RightArmTwist",
+        "arm_twist.r": "rig:RightArmTwist",
+        "upperarm_twist_r": "rig:RightArmTwist",
+        "bip01_r_armtwist": "rig:RightArmTwist",
+
+        "mixamorig:LeftForeArmTwist": "rig:LeftForeArmTwist",
+        "forearm_twist.l": "rig:LeftForeArmTwist",
+        "lowerarm_twist_l": "rig:LeftForeArmTwist",
+        "bip01_l_forearmtwist": "rig:LeftForeArmTwist",
+
+        "mixamorig:RightForeArmTwist": "rig:RightForeArmTwist",
+        "forearm_twist.r": "rig:RightForeArmTwist",
+        "lowerarm_twist_r": "rig:RightForeArmTwist",
+        "bip01_r_forearmtwist": "rig:RightForeArmTwist",
+
+        "mixamorig:LeftUpLegTwist": "rig:LeftUpLegTwist",
+        "thigh_twist.l": "rig:LeftUpLegTwist",
+        "upleg_twist_l": "rig:LeftUpLegTwist",
+        "bip01_l_thightwist": "rig:LeftUpLegTwist",
+
+        "mixamorig:RightUpLegTwist": "rig:RightUpLegTwist",
+        "thigh_twist.r": "rig:RightUpLegTwist",
+        "upleg_twist_r": "rig:RightUpLegTwist",
+        "bip01_r_thightwist": "rig:RightUpLegTwist",
+    }
+    for raw, expected in twist_cases.items():
+        assert canonicalize_bone_name(raw) == expected
+        assert is_humanoid_bone(raw) is True
+        assert is_core_bone(raw) is False
+
+
+def test_canonical_61_bones_preserved() -> None:
+    """All 61 canonical rig:* bones (25 core + 30 finger + 6 twist) must be preserved verbatim."""
+    assert len(CORE_BONE_SUFFIXES) == 25
+    assert len(FINGER_BONE_SUFFIXES) == 30
+    assert len(TWIST_BONE_SUFFIXES) == 6
+    assert len(ALL_HUMANOID_BONE_SUFFIXES) == 61
+
+    for suffix in ALL_HUMANOID_BONE_SUFFIXES:
+        canonical = f"rig:{suffix}"
+        assert canonicalize_bone_name(canonical) == canonical
+        assert normalize_rig_prefix(canonical) == canonical
+        assert is_humanoid_bone(canonical) is True
+        assert bone_suffix(canonical) == suffix
+
+    for suffix in CORE_BONE_SUFFIXES:
+        assert is_core_bone(f"rig:{suffix}") is True
+
+    for suffix in FINGER_BONE_SUFFIXES:
+        assert is_core_bone(f"rig:{suffix}") is False
+
+    for suffix in TWIST_BONE_SUFFIXES:
+        assert is_core_bone(f"rig:{suffix}") is False
+
+
+def test_backward_compatibility_with_25_bone_rigs() -> None:
+    """RigMapping.controlled on a 25-bone rig must return strictly the 22 active core bones."""
+    from v2bm.rig.kinematics import HumanoidRig, RigBone
+    import numpy as np
+
+    # Build a mock 25-bone rig (all core bones)
+    bones = {}
+    for name in CORE_BONE_SUFFIXES:
+        canon = f"rig:{name}"
+        bones[canon] = RigBone(
+            name=canon,
+            parent=None,
+            children=[],
+            pre_rotation=np.eye(3),
+            lcl_translation_cm=np.zeros(3),
+            rest_world=np.eye(4),
+            rest_local=np.eye(4),
+            pre_rotation_euler_deg=np.zeros(3),
+        )
+
+    mock_rig = HumanoidRig(
+        bones=bones,
+        order=[f"rig:{s}" for s in CORE_BONE_SUFFIXES],
+        meters_per_unit=0.01,
+        source=Path("mock.fbx"),
+    )
+
+    mapping = RigMapping(
+        skeleton_rig=mock_rig,
+        target_rig=mock_rig,
+        basis_change={},
+        translation_scale=1.0,
+        r_world_align=np.eye(3),
+        max_basis_deviation_deg=0.0,
+    )
+
+    # Must match CORE_CONTROLLED_BONES exactly (22 bones)
+    assert mapping.controlled == CORE_CONTROLLED_BONES
+    assert len(mapping.controlled) == 22
+    for finger in FINGER_BONE_SUFFIXES:
+        assert f"rig:{finger}" not in mapping.controlled
+    for twist in TWIST_BONE_SUFFIXES:
+        assert f"rig:{twist}" not in mapping.controlled
 

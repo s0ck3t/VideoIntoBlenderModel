@@ -331,19 +331,239 @@ def position_errors(
     return out
 
 
+def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
+    """Spherical linear interpolation between two unit quaternions."""
+    q0_arr = np.asarray(q0, dtype=np.float64).reshape(-1)
+    q1_arr = np.asarray(q1, dtype=np.float64).reshape(-1)
+    dot = float(np.dot(q0_arr, q1_arr))
+    if dot < 0.0:
+        q1_arr = -q1_arr
+        dot = -dot
+    if dot > 0.9995:
+        res = q0_arr + t * (q1_arr - q0_arr)
+        norm = float(np.linalg.norm(res))
+        return res / norm if norm > 1e-12 else q0_arr
+    theta_0 = np.arccos(min(1.0, max(-1.0, dot)))
+    sin_theta_0 = np.sin(theta_0)
+    theta_t = theta_0 * t
+    sin_theta_t = np.sin(theta_t)
+    s0 = np.cos(theta_t) - dot * sin_theta_t / sin_theta_0
+    s1 = sin_theta_t / sin_theta_0
+    res = s0 * q0_arr + s1 * q1_arr
+    norm = float(np.linalg.norm(res))
+    return res / norm if norm > 1e-12 else q0_arr
+
+
+def _quat_wxyz_to_matrix(q: np.ndarray) -> np.ndarray:
+    """Convert a (w, x, y, z) quaternion to a 3x3 orthonormal rotation matrix."""
+    arr = np.asarray(q, dtype=np.float64).reshape(-1)
+    norm = float(np.linalg.norm(arr))
+    if norm < 1e-12:
+        return np.eye(3)
+    w, x, y, z = arr / norm
+    return np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z), 2.0 * (x * z + w * y)],
+            [2.0 * (x * y + w * z), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x)],
+            [2.0 * (x * z - w * y), 2.0 * (y * z + w * x), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
 def _hips_rotation(rig: HumanoidRig, motion, frame: int) -> np.ndarray:
+    """Solve pelvic orientation with decoupled sagittal pitch clamped to [-15 deg, +20 deg].
+
+    Prevents forward thoracic flexion (bows) from pitching the pelvis excessively forward
+    and kicking the legs backward.
+    """
+    bone = rig.bones["rig:Hips"]
     rest_world = forward_kinematics(rig, {})
     rest_pos = world_positions_m(rig, rest_world)
     r_rest_frame = orthonormal_frame(
         rest_pos["rig:LeftUpLeg"] - rest_pos["rig:RightUpLeg"],
-        rest_pos["rig:Neck"] - rest_pos["rig:Hips"],
+        rest_pos["rig:Spine"] - rest_pos["rig:Hips"],
     )
-    r_tgt_frame = orthonormal_frame(
-        joint_rig(motion, frame, "left_hip") - joint_rig(motion, frame, "right_hip"),
-        joint_rig(motion, frame, "neck") - joint_rig(motion, frame, "pelvis"),
+
+    v_lat = joint_rig(motion, frame, "left_hip") - joint_rig(motion, frame, "right_hip")
+    u_lat = normalize(v_lat, fallback=np.array([1.0, 0.0, 0.0]))
+
+    v_spine_lower = joint_rig(motion, frame, "spine1") - joint_rig(motion, frame, "pelvis")
+    if float(np.linalg.norm(v_spine_lower)) < 1e-4:
+        v_spine_lower = WORLD_UP.copy()
+
+    u_fwd_horiz = normalize(np.cross(u_lat, WORLD_UP), fallback=np.array([0.0, 0.0, 1.0]))
+
+    pitch_sin = float(np.dot(v_spine_lower, u_fwd_horiz))
+    pitch_cos = float(np.dot(v_spine_lower, WORLD_UP))
+    pitch_rad = float(np.arctan2(pitch_sin, pitch_cos))
+
+    min_pitch = float(np.radians(-15.0))
+    max_pitch = float(np.radians(20.0))
+    pitch_clamped = float(np.clip(pitch_rad, min_pitch, max_pitch))
+
+    u_pelv_up = normalize(
+        np.cos(pitch_clamped) * WORLD_UP + np.sin(pitch_clamped) * u_fwd_horiz,
+        fallback=WORLD_UP,
     )
+
+    r_tgt_frame = orthonormal_frame(u_lat, u_pelv_up)
     r_hips_world = (r_tgt_frame @ r_rest_frame.T) @ rest_world["rig:Hips"][:3, :3]
-    return anim_from_world_rotation(rig.bones["rig:Hips"], np.eye(3), r_hips_world)
+    return anim_from_world_rotation(bone, np.eye(3), r_hips_world)
+
+
+def _chest_target_frame(motion, frame: int) -> np.ndarray:
+    """Target thoracic chest frame computed from collar lateral axis and upper spinal column."""
+    tgt_left = joint_rig(motion, frame, "left_collar") - joint_rig(motion, frame, "right_collar")
+    tgt_up = joint_rig(motion, frame, "neck") - joint_rig(motion, frame, "spine3")
+
+    # Guard against monocular keypoint inversion when neck dips below spine3:
+    # preserve upright spinal column alignment instead of flipping the ribcage upside-down.
+    u_up = normalize(tgt_up, fallback=WORLD_UP)
+    if float(np.dot(u_up, WORLD_UP)) < -0.10:
+        spine_col = joint_rig(motion, frame, "neck") - joint_rig(motion, frame, "pelvis")
+        u_spine = normalize(spine_col, fallback=WORLD_UP)
+        if float(np.dot(u_spine, WORLD_UP)) > 0.05:
+            tgt_up = spine_col
+        else:
+            tgt_up = WORLD_UP.copy()
+
+    return orthonormal_frame(tgt_left, tgt_up)
+
+
+def _shoulder_rotation(
+    rig: HumanoidRig,
+    world: dict[str, np.ndarray],
+    motion,
+    frame: int,
+    side: str,
+) -> np.ndarray:
+    """Clavicle rotation coupling base collar aim with scapular elevation and protraction."""
+    shoulder_bone_name = f"rig:{side}Shoulder"
+
+    collar_j = "left_collar" if side == "Left" else "right_collar"
+    shoulder_j = "left_shoulder" if side == "Left" else "right_shoulder"
+    elbow_j = "left_elbow" if side == "Left" else "right_elbow"
+
+    tgt_clavicle = human_dir(motion, frame, collar_j, shoulder_j)
+    d_local = swing_aim_local(rig, shoulder_bone_name)
+    r_base = swing_anim_to_direction(
+        rig,
+        world,
+        shoulder_bone_name,
+        AIM_CHILD.get(shoulder_bone_name),
+        tgt_clavicle,
+        d_local=d_local,
+    )
+
+    tgt_arm = human_dir(motion, frame, shoulder_j, elbow_j)
+    if float(np.linalg.norm(tgt_arm)) < 1e-4:
+        return r_base
+
+    u_arm = normalize(tgt_arm)
+    u_down = np.array([0.0, -1.0, 0.0], dtype=np.float64)
+    cos_elev = float(np.clip(np.dot(u_arm, u_down), -1.0, 1.0))
+    theta_elev = float(np.arccos(cos_elev))
+
+    thresh = float(np.radians(60.0))
+    r_elev = np.eye(3)
+    if theta_elev > thresh:
+        delta = theta_elev - thresh
+        phi_elev = 0.35 * delta
+        sign_z = 1.0 if side == "Left" else -1.0
+        c, s = np.cos(sign_z * phi_elev), np.sin(sign_z * phi_elev)
+        r_elev = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+
+    fwd_comp = float(u_arm[2])
+    cross_comp = -float(u_arm[0]) if side == "Left" else float(u_arm[0])
+    r_prot = np.eye(3)
+    if fwd_comp > 0.1 and cross_comp > 0.0:
+        reach_factor = min(1.0, (fwd_comp + cross_comp) * 0.5)
+        phi_prot = min(float(np.radians(15.0)), float(np.radians(15.0)) * reach_factor)
+        sign_y = -1.0 if side == "Left" else 1.0
+        cy, sy = np.cos(sign_y * phi_prot), np.sin(sign_y * phi_prot)
+        r_prot = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]], dtype=np.float64)
+
+    return r_base @ (r_prot @ r_elev)
+
+
+def _cranial_rotations(
+    rig: HumanoidRig,
+    world: dict[str, np.ndarray],
+    motion,
+    frame: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Solve 3-DoF relative cranial rotation and distribute 40% to Neck and 60% to Head."""
+    r_cranium_world: np.ndarray | None = None
+
+    # 1. Direct quaternion if present on motion
+    if (
+        hasattr(motion, "head_rotation_quat")
+        and motion.head_rotation_quat is not None
+        and len(motion.head_rotation_quat) > frame
+    ):
+        q_head = np.asarray(motion.head_rotation_quat[frame], dtype=np.float64).reshape(-1)
+        if len(q_head) == 4 and float(np.linalg.norm(q_head)) > 1e-4:
+            r_cranium_world = _quat_wxyz_to_matrix(q_head)
+
+    # 2. Cranial landmarks fallback from MediaPipe world landmarks
+    if r_cranium_world is None and (
+        hasattr(motion, "world_landmarks")
+        and motion.world_landmarks is not None
+        and len(motion.world_landmarks) > frame
+    ):
+        w_lms = motion.world_landmarks[frame]
+        # Landmarks: 0: nose, 7: left_ear, 8: right_ear, 9: mouth_left, 10: mouth_right
+        p_nose = np.array([w_lms[0, 0], -w_lms[0, 1], -w_lms[0, 2]], dtype=np.float64)
+        p_lear = np.array([w_lms[7, 0], -w_lms[7, 1], -w_lms[7, 2]], dtype=np.float64)
+        p_rear = np.array([w_lms[8, 0], -w_lms[8, 1], -w_lms[8, 2]], dtype=np.float64)
+        p_lmouth = np.array([w_lms[9, 0], -w_lms[9, 1], -w_lms[9, 2]], dtype=np.float64)
+        p_rmouth = np.array([w_lms[10, 0], -w_lms[10, 1], -w_lms[10, 2]], dtype=np.float64)
+
+        v_lat = p_lear - p_rear
+        if float(np.linalg.norm(v_lat)) > 1e-4:
+            u_lat = normalize(v_lat)
+            m_ears = 0.5 * (p_lear + p_rear)
+            m_mouth = 0.5 * (p_lmouth + p_rmouth)
+            v_fwd = 0.70 * (p_nose - m_ears) + 0.30 * (m_mouth - m_ears)
+            v_fwd_rej = v_fwd - u_lat * float(np.dot(v_fwd, u_lat))
+            if float(np.linalg.norm(v_fwd_rej)) > 1e-4:
+                u_fwd = normalize(v_fwd_rej)
+                u_up = normalize(np.cross(u_fwd, u_lat))
+                r_cranium_world = np.column_stack([u_lat, u_up, u_fwd])
+
+    # 3. Fallback to single-vector swing spine3 -> head
+    if r_cranium_world is None:
+        u_up = normalize(human_dir(motion, frame, "spine3", "head"), fallback=WORLD_UP)
+        u_lat_hint = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+        u_fwd = normalize(np.cross(u_lat_hint, u_up), fallback=np.array([0.0, 0.0, 1.0]))
+        u_lat = normalize(np.cross(u_up, u_fwd))
+        u_up = normalize(np.cross(u_fwd, u_lat))
+        r_cranium_world = np.column_stack([u_lat, u_up, u_fwd])
+
+    # Relative cranial rotation from Spine2 thoracic cage
+    parent_r = world["rig:Spine2"][:3, :3]
+    r_rel = parent_r.T @ r_cranium_world
+    if float(np.linalg.det(r_rel)) < 0.0:
+        u, _, vt = np.linalg.svd(r_rel)
+        r_rel = u @ vt
+
+    q_rel = quat_wxyz(r_rel)
+    if q_rel[0] < 0.0:
+        q_rel = -q_rel
+
+    q_I = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    q_neck = _slerp(q_I, q_rel, 0.40)
+    q_head = _slerp(q_I, q_rel, 0.60)
+
+    # Solve Neck anim rotation (parent is Spine2)
+    r_target_neck_world = parent_r @ rig.bones["rig:Neck"].pre_rotation @ _quat_wxyz_to_matrix(q_neck)
+    r_neck_anim = anim_from_world_rotation(rig.bones["rig:Neck"], parent_r, r_target_neck_world)
+
+    # Solve Head anim rotation (parent is Neck)
+    r_head_anim = anim_from_world_rotation(rig.bones["rig:Head"], r_target_neck_world, r_cranium_world)
+
+    return r_neck_anim, r_head_anim
 
 
 def _spine2_chest_rotation(rig: HumanoidRig, world: dict[str, np.ndarray], motion, frame: int) -> np.ndarray:
@@ -358,9 +578,11 @@ def _spine2_chest_rotation(rig: HumanoidRig, world: dict[str, np.ndarray], motio
 
     # Guard against monocular keypoint inversion when neck dips below spine3:
     # preserve upright spinal column alignment instead of flipping the ribcage upside-down.
-    if np.dot(tgt_up, WORLD_UP) < 0.05:
+    u_up = normalize(tgt_up, fallback=WORLD_UP)
+    if float(np.dot(u_up, WORLD_UP)) < -0.10:
         spine_col = joint_rig(motion, frame, "neck") - joint_rig(motion, frame, "pelvis")
-        if np.dot(spine_col, WORLD_UP) > 0.05:
+        u_spine = normalize(spine_col, fallback=WORLD_UP)
+        if float(np.dot(u_spine, WORLD_UP)) > 0.05:
             tgt_up = spine_col
         else:
             tgt_up = WORLD_UP.copy()
@@ -566,6 +788,7 @@ def retarget_one_frame(
     legs: bool = True,
     prev_r_anim: dict[str, np.ndarray] | None = None,
     prev_q_anim: dict[str, np.ndarray] | None = None,
+    hand_data: dict[str, Any] | None = None,
 ) -> FrameRetarget:
     hips_t_cm = joint_rig(motion, frame, "pelvis") / rig.meters_per_unit
     r_anim = {name: np.eye(3) for name in rig.order}
@@ -607,34 +830,60 @@ def retarget_one_frame(
             commit(bone_name, rotation)
 
     commit("rig:Hips", _hips_rotation(rig, motion, frame))
+
+    # Progressive Spine Curvature & Axial Torsion (25% Spine, 35% Spine1, 40% Spine2)
+    r_chest_target = _chest_target_frame(motion, frame)
+    r_pelvis_world = fk()["rig:Hips"][:3, :3]
+    r_torso_rel = r_pelvis_world.T @ r_chest_target
+    if float(np.linalg.det(r_torso_rel)) < 0.0:
+        u, _, vt = np.linalg.svd(r_torso_rel)
+        r_torso_rel = u @ vt
+
+    q_torso = quat_wxyz(r_torso_rel)
+    if q_torso[0] < 0.0:
+        q_torso = -q_torso
+
+    q_I = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    q_spine = _slerp(q_I, q_torso, 0.25)
+
+    r_target_spine_world = r_pelvis_world @ _quat_wxyz_to_matrix(q_spine)
+    commit(
+        "rig:Spine",
+        anim_from_world_rotation(rig.bones["rig:Spine"], r_pelvis_world, r_target_spine_world),
+    )
+
+    r_target_spine1_world = r_pelvis_world @ _quat_wxyz_to_matrix(_slerp(q_I, q_torso, 0.60))
+    commit(
+        "rig:Spine1",
+        anim_from_world_rotation(rig.bones["rig:Spine1"], fk()["rig:Spine"][:3, :3], r_target_spine1_world),
+    )
+
+    commit(
+        "rig:Spine2",
+        anim_from_world_rotation(rig.bones["rig:Spine2"], fk()["rig:Spine1"][:3, :3], r_chest_target),
+    )
+
+    # 3-DoF Cranial Solver (Neck 40% / Head 60%)
+    r_neck, r_head = _cranial_rotations(rig, fk(), motion, frame)
+    commit("rig:Neck", r_neck)
+    commit("rig:Head", r_head)
+
     if clavicles:
-        apply_swings(
-            {
-                "rig:Spine": SWING_TARGETS["rig:Spine"],
-                "rig:Spine1": SWING_TARGETS["rig:Spine1"],
-            }
-        )
-        commit("rig:Spine2", _spine2_chest_rotation(rig, fk(), motion, frame))
-        apply_swings(
-            {
-                "rig:Neck": SWING_TARGETS["rig:Neck"],
-                "rig:Head": SWING_TARGETS["rig:Head"],
-                "rig:LeftShoulder": SWING_TARGETS["rig:LeftShoulder"],
-                "rig:LeftArm": SWING_TARGETS["rig:LeftArm"],
-                "rig:RightShoulder": SWING_TARGETS["rig:RightShoulder"],
-                "rig:RightArm": SWING_TARGETS["rig:RightArm"],
-            }
-        )
+        # Scapular Rhythm Clavicles & Arms
+        commit("rig:LeftShoulder", _shoulder_rotation(rig, fk(), motion, frame, "Left"))
+        apply_swings({"rig:LeftArm": SWING_TARGETS["rig:LeftArm"]})
+        commit("rig:RightShoulder", _shoulder_rotation(rig, fk(), motion, frame, "Right"))
+        apply_swings({"rig:RightArm": SWING_TARGETS["rig:RightArm"]})
+
         commit("rig:LeftForeArm", _forearm_rotation(rig, fk(), motion, frame, "Left", prev_r_anim))
         commit("rig:RightForeArm", _forearm_rotation(rig, fk(), motion, frame, "Right", prev_r_anim))
         commit("rig:LeftHand", _hand_rotation(rig, fk(), motion, frame, "Left"))
         commit("rig:RightHand", _hand_rotation(rig, fk(), motion, frame, "Right"))
     else:
-        apply_swings(SWING_TARGETS_NO_CLAVICLE)
         apply_swings(
             {
-                "rig:Neck": SWING_TARGETS["rig:Neck"],
-                "rig:Head": SWING_TARGETS["rig:Head"],
+                "rig:LeftArm": SWING_TARGETS_NO_CLAVICLE["rig:LeftArm"],
+                "rig:RightArm": SWING_TARGETS_NO_CLAVICLE["rig:RightArm"],
             }
         )
         commit("rig:LeftForeArm", _forearm_rotation(rig, fk(), motion, frame, "Left", prev_r_anim))
