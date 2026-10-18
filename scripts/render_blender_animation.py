@@ -364,39 +364,65 @@ def main():
             cam_data.lens = 40.0
             mesh_objs = [o for o in scene.objects if o.type == "MESH" and o.name != "StudioFloor"]
             if mesh_objs:
-                sample_frames = sorted({start_frame, (start_frame + end_frame) // 2, end_frame})
+                depsgraph = bpy.context.evaluated_depsgraph_get()
+                step = max(1, (end_frame - start_frame) // 24)
+                sample_frames = sorted({*range(start_frame, end_frame + 1, step), end_frame})
                 all_x: list[float] = []
                 all_z: list[float] = []
                 frame_heights: list[float] = []
+                frame_mid_z: list[float] = []
                 for f_idx in sample_frames:
                     scene.frame_set(int(f_idx))
+                    depsgraph.update()
                     f_z: list[float] = []
                     for m in mesh_objs:
-                        for corner in m.bound_box:
-                            w_pt = m.matrix_world @ mathutils.Vector(corner)
+                        m_eval = m.evaluated_get(depsgraph)
+                        for corner in m_eval.bound_box:
+                            w_pt = m_eval.matrix_world @ mathutils.Vector(corner)
                             all_x.append(float(w_pt.x))
                             all_z.append(float(w_pt.z))
                             f_z.append(float(w_pt.z))
                     if f_z:
                         frame_heights.append(max(f_z) - min(f_z))
+                        frame_mid_z.append(0.5 * (max(f_z) + min(f_z)))
                 scene.frame_set(start_frame)
 
-                char_h = max(frame_heights) if frame_heights else (max(all_z) - min(all_z))
-                char_mid_z = 0.5 * (max(all_z) + min(all_z))
-                char_mid_x = 0.5 * (max(all_x) + min(all_x))
+                char_h = float(max(frame_heights)) if frame_heights else 1.70
+                char_h = max(1.45, min(2.15, char_h))
+                char_mid_z = float(sum(frame_mid_z) / len(frame_mid_z)) if frame_mid_z else 0.85
+                char_mid_x = 0.5 * (max(all_x) + min(all_x)) if all_x else 0.0
 
                 aspect = float(args.res_x) / float(args.res_y) if args.res_y > 0 else 16.0 / 9.0
                 sensor_width = float(cam_data.sensor_width or 36.0)
                 sensor_height = sensor_width / aspect
                 vfov_rad = 2.0 * math.atan((sensor_height * 0.5) / float(cam_data.lens))
 
-                target_fill = 0.70
+                target_fill = 0.68
                 target_dist = (char_h * 0.5) / (math.tan(vfov_rad * 0.5) * target_fill)
-                target_dist = max(target_dist, char_h * 0.8)
+                target_dist = max(2.8, min(4.5, target_dist))
 
-                cam_center_z = max(char_mid_z, char_h * 0.5)
+                cam_center_z = max(char_mid_z, char_h * 0.48)
                 cam_obj.location = (char_mid_x, -target_dist, cam_center_z)
                 cam_obj.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+
+                # Smooth horizontal camera pan when the performer travels laterally across the stage
+                hips_bone = arm_obj.pose.bones.get("rig:Hips") if hasattr(arm_obj, "pose") else None
+                if hips_bone is not None and (max(all_x) - min(all_x)) > 0.35:
+                    hips_xs: list[float] = []
+                    for f_idx in range(start_frame, end_frame + 1):
+                        scene.frame_set(int(f_idx))
+                        w_hip = arm_obj.matrix_world @ hips_bone.head
+                        hips_xs.append(float(w_hip.x))
+                    scene.frame_set(start_frame)
+                    n_f = len(hips_xs)
+                    win = min(15, max(3, n_f // 8))
+                    for i, f_idx in enumerate(range(start_frame, end_frame + 1)):
+                        i0 = max(0, i - win)
+                        i1 = min(n_f, i + win + 1)
+                        smooth_x = sum(hips_xs[i0:i1]) / float(i1 - i0)
+                        cam_obj.location = (smooth_x, -target_dist, cam_center_z)
+                        cam_obj.keyframe_insert(data_path="location", frame=int(f_idx))
+
                 log(
                     f"Adaptive full-body camera configured: char_height={char_h:.2f}m, "
                     f"centre_z={cam_center_z:.2f}m, dist={target_dist:.2f}m, vertical_fill={target_fill * 100:.0f}%",

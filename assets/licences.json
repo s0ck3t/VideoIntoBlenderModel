@@ -176,6 +176,33 @@
         "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion diffuse PNG texture, passing v2bm.checks.check_rig, exhibiting rest FK error < 1e-4 and rest skin error < 1e-2 cm, and passing headless Blender GLB validation."
       },
       {
+        "id": "rig_renderpeople_sophia",
+        "title": "Renderpeople Free 3D People — Sophia (rp_sophia_animated_003_idling)",
+        "creator": "Renderpeople GmbH",
+        "source_url": "https://renderpeople.com/free-3d-people/",
+        "local_path": "assets/rigs/renderpeople_sophia.fbx",
+        "companion_texture_path": "assets/rigs/renderpeople_sophia.png",
+        "licence_name": "Renderpeople Official Free 3D People Commercial Licence",
+        "licence_spdx": "Renderpeople-Free",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Character model: 'rp_sophia_animated_003_idling' (Sophia) by Renderpeople GmbH (https://renderpeople.com/free-3d-people/), free for commercial and non-commercial use.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": true,
+          "texture_resolution": "1024x1024",
+          "texture_mime": "image/png",
+          "bone_count": 61,
+          "vertex_count": 8320,
+          "polygon_count": 16475,
+          "shape_key_count": 52,
+          "rest_fk_error": 0.0,
+          "rest_skin_error_cm": 1.681678e-05
+        },
+        "verification_statement": "Verified compliant: photogrammetry-scanned clothed female FBX character rig with 61 canonical bones (25 core + 30 phalangeal fingers + 6 limb twists), 52 canonical ARKit facial blendshapes, and embedded/companion 1024x1024 diffuse PNG texture, passing v2bm.checks.check_rig with rest FK error == 0.0 and rest skin error < 1e-4 cm."
+      },
+      {
         "id": "procedural_articulated_humanoid_rig",
         "title": "Procedural CC0 61-Bone Articulated Humanoid Character Rig Asset",
         "creator": "VideoIntoBlenderModel Maintainers",

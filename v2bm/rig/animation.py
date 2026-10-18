@@ -77,6 +77,51 @@ def compute_hips_translation_cm(motion, frame: int, rig) -> np.ndarray:
     return rest_hips_cm
 
 
+def _compute_airborne_lift_m(motion, frames: list[int]) -> np.ndarray:
+    """Estimate vertical airborne jump elevation (metres >= 0) from 2D screen landmarks.
+
+    When all lower-body landmarks (hips, knees, ankles, heels, toes) rise significantly
+    above the local stance ground envelope in screen space (e.g. during a flying kick
+    or aerial jump), returns the corresponding elevation in metres. During normal stance,
+    walking, or floor-work, returns 0.0 so the lowest contact point stays pinned to Y = 0.
+    """
+    n_out = len(frames)
+    sl = getattr(motion, "screen_landmarks", None)
+    if sl is None or n_out < 16:
+        return np.zeros(n_out, dtype=np.float64)
+    arr = np.asarray(sl, dtype=np.float64)
+    if arr.ndim != 3 or arr.shape[1] < 33 or max(frames, default=0) >= len(arr):
+        return np.zeros(n_out, dtype=np.float64)
+
+    sub = arr[frames]
+    lower_idxs = [23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+    max_screen_y = np.clip(sub[:, lower_idxs, 1].max(axis=1), 0.0, 1.02)
+
+    neck_2d = 0.5 * (sub[:, 11, :2] + sub[:, 12, :2])
+    pelvis_2d = 0.5 * (sub[:, 23, :2] + sub[:, 24, :2])
+    torso_2d = np.linalg.norm(neck_2d - pelvis_2d, axis=-1)
+    med_torso_2d = max(float(np.median(torso_2d)), 0.12)
+    meters_per_unit_2d = 0.52 / med_torso_2d
+
+    fps = float(getattr(motion, "fps", 24.0) or 24.0)
+    win = max(12, int(round(1.8 * fps)))
+    ground_y = np.zeros(n_out, dtype=np.float64)
+    for t in range(n_out):
+        t0 = max(0, t - win)
+        t1 = min(n_out, t + win + 1)
+        ground_y[t] = float(np.percentile(max_screen_y[t0:t1], 85))
+
+    deadband = 0.075
+    raw_lift_m = np.maximum(0.0, ground_y - max_screen_y - deadband) * meters_per_unit_2d * 1.35
+    if n_out >= 5:
+        kernel = np.array([0.1, 0.2, 0.4, 0.2, 0.1], dtype=np.float64)
+        lift_m = np.convolve(np.pad(raw_lift_m, 2, mode="edge"), kernel, mode="valid")
+    else:
+        lift_m = raw_lift_m
+    lift_m[lift_m < 0.02] = 0.0
+    return lift_m
+
+
 @dataclass
 class RetargetedAnimation:
     frames: list[int]
@@ -91,6 +136,7 @@ class RetargetedAnimation:
     twist_events: list[dict] = field(default_factory=list)
     sign_events: list[dict] = field(default_factory=list)
     morph_weights: np.ndarray | None = None  # (N, M) float32 in [0.0, 1.0]
+    airborne_lift_m: np.ndarray | None = None  # (N,) float64 >= 0.0
 
     @property
     def n(self) -> int:
@@ -321,19 +367,23 @@ def build_animation(
     )
     rest_sole_rig_m = max(0.0, min(float(p[1]) for p in rest_rig_pos.values()))
 
+    airborne_lift_m = _compute_airborne_lift_m(motion, frames)
+    anim.airborne_lift_m = airborne_lift_m
+
     r_rig_list: list[dict[str, np.ndarray]] = []
     hips_rig_list: list[np.ndarray] = []
     raw_y_skel_cm = np.zeros(len(frames), dtype=np.float64)
     raw_y_rig_cm = np.zeros(len(frames), dtype=np.float64)
 
     for i, frame in enumerate(frames):
+        lift_m = float(airborne_lift_m[i])
         r_skel = smoothed_r_skeleton[i]
         hips_cm = hips_list[i].copy()
         skel_zero = world_positions_m(
             skel, forward_kinematics(skel, r_skel, hips_translation_cm=np.zeros(3))
         )
         min_rel_y_skel = min(float(p[1]) for p in skel_zero.values())
-        raw_y_skel_cm[i] = (-min_rel_y_skel + rest_sole_skel_m) / skel.meters_per_unit
+        raw_y_skel_cm[i] = (-min_rel_y_skel + rest_sole_skel_m + lift_m) / skel.meters_per_unit
 
         r_rig = mapping.apply_rest_relative_rotations(r_skel)
         for b_name, b_rot in r_skel.items():
@@ -342,7 +392,7 @@ def build_animation(
         hips_rig = mapping.hips_translation_cm(hips_cm)
         rig_zero = mapping.humanoid_rig_positions_m(r_rig, np.zeros(3))
         min_rel_y_rig = min(float(p[1]) for p in rig_zero.values())
-        raw_y_rig_cm[i] = (-min_rel_y_rig + rest_sole_rig_m) / mapping.target_rig.meters_per_unit
+        raw_y_rig_cm[i] = (-min_rel_y_rig + rest_sole_rig_m + lift_m) / mapping.target_rig.meters_per_unit
 
         r_rig_list.append(r_rig)
         hips_rig_list.append(hips_rig)
@@ -360,6 +410,7 @@ def build_animation(
             smooth_y_rig_cm[t] = max(avg_rig, raw_y_rig_cm[t])
 
     for i, frame in enumerate(frames):
+        lift_m = float(airborne_lift_m[i])
         r_skel = smoothed_r_skeleton[i]
         hips_cm = hips_list[i].copy()
         hips_cm[1] = smooth_y_skel_cm[i]
@@ -376,7 +427,7 @@ def build_animation(
         if float(np.linalg.norm(h_pos.get("pelvis", np.zeros(3)))) < 0.05:
             min_h_y = min(float(p[1]) for p in h_pos.values())
             hips_m = hips_cm * skel.meters_per_unit
-            offset_m = np.array([hips_m[0], -min_h_y, hips_m[2]], dtype=np.float64)
+            offset_m = np.array([hips_m[0], -min_h_y + lift_m, hips_m[2]], dtype=np.float64)
             anim.human_pos[i] = {k: p + offset_m for k, p in h_pos.items()}
 
         anim.r_anim_skeleton.append(r_skel)
@@ -437,12 +488,17 @@ def skin_frames(
 def pin_character_mesh_to_ground(
     asset: HumanoidRigAsset, anim: RetargetedAnimation, device: str = "cpu"
 ) -> None:
-    """Align vertical hip translations so the skinned character mesh rests cleanly on Y = 0."""
+    """Align vertical hip translations so the skinned character mesh rests cleanly on Y = 0 (or airborne jump height)."""
     if not asset.meshes or anim.n == 0:
         return
     skinned = skin_frames(asset, anim, list(range(anim.n)), device=device)
+    lift_arr = (
+        anim.airborne_lift_m
+        if anim.airborne_lift_m is not None and len(anim.airborne_lift_m) == anim.n
+        else np.zeros(anim.n, dtype=np.float64)
+    )
     raw_delta_m = np.array(
-        [-float(np.concatenate(v, axis=0)[:, 1].min()) for v in skinned],
+        [-float(np.concatenate(v, axis=0)[:, 1].min()) + float(lift_arr[idx]) for idx, v in enumerate(skinned)],
         dtype=np.float64,
     )
     smooth_delta_m = raw_delta_m.copy()

@@ -17,6 +17,7 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 | `video_street_dancer` | Video | Street Dancer Breakdance & Freestyle Demonstration | Cottonbro Studio / Pexels Contributor | [Pexels](https://www.pexels.com/video/51310/) | `assets/video/street_dancer_51310.mp4` | [Pexels](https://www.pexels.com/license/) | Permitted | Optional |
 | `rig_kenney_skater` | Rig | Animated Characters Protagonists — Skater Male | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-protagonists) | `assets/rigs/kenney_skater.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
 | `rig_kenney_female` | Rig | Animated Characters Retro — Human Female | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-retro) | `assets/rigs/kenney_female.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
+| `rig_renderpeople_sophia` | Rig | Renderpeople Free 3D People — Sophia (`rp_sophia_animated_003_idling`) | Renderpeople GmbH | [Renderpeople.com](https://renderpeople.com/free-3d-people/) | `assets/rigs/renderpeople_sophia.fbx` | [Renderpeople-Free](https://renderpeople.com/general-terms-and-conditions/) | Permitted | Optional |
 | `procedural_articulated_humanoid_rig` | Rig | Procedural CC0 61-Bone Articulated Humanoid Rig Asset | Project Maintainers | Procedural Blender script | `assets/rigs/humanoid_articulated.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `rig_humanoid_rig` | Rig | Procedural Expressive CC0 Humanoid Character Rig | Project Maintainers | Procedural Blender generator | `assets/rigs/humanoid_rig.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `image_urban_dancer_pose` | Image | Urban Dancer Full-Body Pose | Project Contributors | Photographic capture | `assets/image/urban_dancer_pose.png` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
@@ -86,13 +87,20 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 - **Local File Path**: `assets/rigs/kenney_female.fbx`
 - **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
 
-### 3.3. Procedural CC0 61-Bone Articulated Humanoid Character Rig (`assets/rigs/humanoid_articulated.fbx`)
+### 3.3. Renderpeople Free 3D People — Sophia (`assets/rigs/renderpeople_sophia.fbx`)
+
+- **Creator / Author**: Renderpeople GmbH ([renderpeople.com](https://renderpeople.com/free-3d-people/))
+- **Local File Path**: `assets/rigs/renderpeople_sophia.fbx` (companion texture: `assets/rigs/renderpeople_sophia.png`)
+- **Licence**: Renderpeople Official Free 3D People Licence (Permitted for commercial and non-commercial projects)
+- **Specification**: Photogrammetry-scanned clothed female character rigged with 61 canonical `rig:*` bones (25 core + 30 phalangeal finger bones + 6 limb twist bones) and 52 canonical ARKit facial blendshapes (`Basis` + 52 shape keys).
+
+### 3.4. Procedural CC0 61-Bone Articulated Humanoid Character Rig (`assets/rigs/humanoid_articulated.fbx`)
 
 - **Creator / Author**: VideoIntoBlenderModel Maintainers
 - **Local File Path**: `assets/rigs/humanoid_articulated.fbx`
 - **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
 
-### 3.4. Procedural Expressive CC0 Humanoid Character Rig (`assets/rigs/humanoid_rig.fbx`)
+### 3.5. Procedural Expressive CC0 Humanoid Character Rig (`assets/rigs/humanoid_rig.fbx`)
 
 - **Creator / Author**: VideoIntoBlenderModel Maintainers
 - **Local File Path**: `assets/rigs/humanoid_rig.fbx`
