@@ -1141,6 +1141,17 @@ class MediaPipeExtractor:
 # High-Level Motion Extraction Pipeline
 # ==============================================================================
 
+def _is_full_body_pose(s_coords: np.ndarray, vis: np.ndarray) -> bool:
+    """Return True if lower-body landmarks (hips and knees) are visible or within the camera frame."""
+    hip_vis = max(float(vis[23]), float(vis[24]))
+    knee_vis = max(float(vis[25]), float(vis[26]))
+    hip_y = min(float(s_coords[23, 1]), float(s_coords[24, 1]))
+    knee_y = min(float(s_coords[25, 1]), float(s_coords[26, 1]))
+    if hip_y > 1.05 and knee_y > 1.15 and hip_vis < 0.25 and knee_vis < 0.25:
+        return False
+    return True
+
+
 def extract_motion(
     video: Path,
     output_npz: Path,
@@ -1200,6 +1211,16 @@ def extract_motion(
         if mode != "portrait":
             det = extractor.detect_frame(frame)
 
+        face_det = None
+        if det is not None and mode == "auto" and not _is_full_body_pose(det[1], det[2]):
+            if capture_face and face_extractor is not None:
+                head_roi = compute_head_roi(det[1], frame.shape[1], frame.shape[0])
+                face_det = face_extractor.detect_cropped_roi(frame, head_roi)
+                if face_det is None:
+                    face_det = face_extractor.detect_frame(frame)
+            if face_det is not None:
+                det = None
+
         if det is not None:
             framing = "full_body"
             w_coords, s_coords, vis = det
@@ -1217,19 +1238,15 @@ def extract_motion(
             )[0]
 
             # Pose-guided head ROI crop for facial extraction
-            if capture_face and face_extractor is not None:
+            if capture_face and face_extractor is not None and face_det is None:
                 head_roi = compute_head_roi(s_coords, frame.shape[1], frame.shape[0])
                 face_det = face_extractor.detect_cropped_roi(frame, head_roi)
                 if face_det is None:
                     face_det = face_extractor.detect_frame(frame)
-            else:
-                face_det = None
         else:
             # Portrait fallback
-            if capture_face and face_extractor is not None:
+            if capture_face and face_extractor is not None and face_det is None:
                 face_det = face_extractor.detect_frame(frame)
-            else:
-                face_det = None
             if face_det is None and mode != "portrait":
                 extractor.close()
                 if face_extractor is not None:
@@ -1365,11 +1382,23 @@ def extract_motion(
 
         valid_pose_indices = [i for i, w in enumerate(world_list) if w is not None]
         valid_face_indices = [i for i, f in enumerate(face_list) if f is not None]
+        full_body_pose_indices = [
+            i
+            for i in valid_pose_indices
+            if screen_list[i] is not None
+            and vis_list[i] is not None
+            and _is_full_body_pose(screen_list[i], vis_list[i])
+        ]
+        is_portrait_auto = (
+            mode == "auto"
+            and bool(valid_face_indices)
+            and len(full_body_pose_indices) < 0.20 * max(1, len(valid_pose_indices))
+        )
 
         fps = playback_fps(video, n_frames, fallback=raw_fps or HOLD_FPS)
         timestamps = np.arange(n_frames, dtype=np.float64) / float(fps)
 
-        if valid_pose_indices and mode != "portrait":
+        if valid_pose_indices and mode != "portrait" and not is_portrait_auto:
             framing = "full_body"
 
             # Fill leading missing frames from the first valid detection

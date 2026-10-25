@@ -259,18 +259,29 @@ def _setup_view(
     mesh_pts = np.concatenate(frames_pts, axis=0)
     del frames_pts
 
+    fit_pts = np.concatenate(
+        [all_points(anim.human_pos), all_points(anim.rig_skel_pos), mesh_pts],
+        axis=0,
+    )
+    fill = CAMERA_FILL
+    if getattr(anim, "framing", "full_body") == "portrait" and anim.rig_skel_pos:
+        p0 = anim.rig_skel_pos[0]
+        chest_pt = p0.get("rig:Spine1", p0.get("rig:Spine"))
+        chest_y = float(chest_pt[1]) if chest_pt is not None else 1.25
+        portrait_mask = (fit_pts[:, 1] >= chest_y) & (np.abs(fit_pts[:, 0]) <= 0.32)
+        if np.any(portrait_mask):
+            fit_pts = fit_pts[portrait_mask]
+            fill = 0.85
+
     cam = build_perspective_camera(
         axes,
-        np.concatenate(
-            [all_points(anim.human_pos), all_points(anim.rig_skel_pos), mesh_pts],
-            axis=0,
-        ),
+        fit_pts,
         width,
         height,
         fov_deg=CAMERA_FOV_DEG,
         azimuth_deg=CAMERA_AZIMUTH_DEG,
         elevation_deg=CAMERA_ELEVATION_DEG,
-        fill=CAMERA_FILL,
+        fill=fill,
     )
     del mesh_pts
     hips = np.stack([anim.rig_skel_pos[i]["rig:Hips"] for i in range(anim.n)])

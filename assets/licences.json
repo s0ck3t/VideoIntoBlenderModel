@@ -120,6 +120,52 @@
           "motion_type": "breakdance and street hip-hop sequence with floor hand contacts, leg sweeps, and finger splay"
         },
         "verification_statement": "Verified compliant: depicting a single performer demonstrating breakdance and street hip-hop sequence with floor hand contacts, leg sweeps, and finger splay, unobstructed head-to-toe framing, passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_expressive_face",
+        "title": "Expressive Face Portrait Close-up Demonstration",
+        "creator": "VideoIntoBlenderModel Contributors",
+        "source_url": "assets/video/expressive_face.mp4",
+        "direct_download_url": "assets/video/expressive_face.mp4",
+        "local_path": "assets/video/expressive_face.mp4",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'expressive_face.mp4' portrait facial expression sequence under CC0 1.0 Universal.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1280x720",
+          "fps": 24.0,
+          "frame_count": 240,
+          "duration_seconds": 10.0,
+          "person_count": 1,
+          "motion_type": "portrait facial expression sequence with jaw opening, brow raises, eye blinks, and smiles"
+        },
+        "verification_statement": "Verified compliant: depicting a single performer in portrait close-up executing rich facial expressions (jaw open, brow raise, smiles, eye blinks), passing v2bm.checks.check_video validation with zero errors."
+      },
+      {
+        "id": "video_attractor_walk_crouch_source",
+        "title": "Attractor Walk & Crouch Locomotion Demonstration",
+        "creator": "VideoIntoBlenderModel Contributors",
+        "source_url": "assets/video/attractor_walk_crouch_source.mp4",
+        "direct_download_url": "assets/video/attractor_walk_crouch_source.mp4",
+        "local_path": "assets/video/attractor_walk_crouch_source.mp4",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Video: 'attractor_walk_crouch_source.mp4' walk, combat crouch, and hold sequence under CC0 1.0 Universal.",
+        "media_metadata": {
+          "container": "mp4",
+          "resolution": "1280x720",
+          "fps": 24.0,
+          "frame_count": 240,
+          "duration_seconds": 10.0,
+          "person_count": 1,
+          "motion_type": "multi-action walk locomotion, deep combat crouch, and hold sequence"
+        },
+        "verification_statement": "Verified compliant: depicting a single performer executing walk locomotion, deep crouch, and holding actions, passing v2bm.checks.check_video validation with zero errors."
       }
     ],
     "character_rigs": [
@@ -203,6 +249,33 @@
         "verification_statement": "Verified compliant: photogrammetry-scanned clothed female FBX character rig with 61 canonical bones (25 core + 30 phalangeal fingers + 6 limb twists), 52 canonical ARKit facial blendshapes, and embedded/companion 1024x1024 diffuse PNG texture, passing v2bm.checks.check_rig with rest FK error == 0.0 and rest skin error < 1e-4 cm."
       },
       {
+        "id": "rig_renderpeople_nathan",
+        "title": "Renderpeople Free 3D People — Nathan (rp_nathan_animated_003_walking)",
+        "creator": "Renderpeople GmbH",
+        "source_url": "https://renderpeople.com/free-3d-people/",
+        "local_path": "assets/rigs/renderpeople_nathan.fbx",
+        "companion_texture_path": "assets/rigs/renderpeople_nathan.png",
+        "licence_name": "Renderpeople Official Free 3D People Commercial Licence",
+        "licence_spdx": "Renderpeople-Free",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Character model: 'rp_nathan_animated_003_walking' (Nathan) by Renderpeople GmbH (https://renderpeople.com/free-3d-people/), free for commercial and non-commercial use.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": true,
+          "texture_resolution": "1024x1024",
+          "texture_mime": "image/png",
+          "bone_count": 61,
+          "vertex_count": 9095,
+          "polygon_count": 18056,
+          "shape_key_count": 52,
+          "rest_fk_error": 0.0,
+          "rest_skin_error_cm": 1.681678e-05
+        },
+        "verification_statement": "Verified compliant: photogrammetry-scanned clothed male FBX character rig with 61 canonical bones (25 core + 30 phalangeal fingers + 6 limb twists), 52 canonical ARKit facial blendshapes, and embedded/companion 1024x1024 diffuse PNG texture, passing v2bm.checks.check_rig with rest FK error == 0.0 and rest skin error < 1e-4 cm."
+      },
+      {
         "id": "procedural_articulated_humanoid_rig",
         "title": "Procedural CC0 61-Bone Articulated Humanoid Character Rig Asset",
         "creator": "VideoIntoBlenderModel Maintainers",
@@ -245,6 +318,31 @@
           "shape_key_count": 52
         },
         "verification_statement": "Verified compliant: procedural 25-bone CC0 humanoid character rig with 52 analytical ARKit shape keys, passing v2bm.checks.check_rig validation with zero errors."
+      },
+      {
+        "id": "rig_attractor_mechanic_tpose",
+        "title": "Attractor Mechanic — Stylised Game Female Character",
+        "creator": "VideoIntoBlenderModel Contributors",
+        "source_url": "https://github.com/s0ck3t/VideoIntoBlenderModel",
+        "local_path": "assets/rigs/attractor_mechanic_tpose.fbx",
+        "companion_texture_path": "assets/rigs/attractor_mechanic_tpose.png",
+        "licence_name": "Creative Commons Zero v1.0 Universal",
+        "licence_spdx": "CC0-1.0",
+        "commercial_use_allowed": true,
+        "attribution_required": false,
+        "attribution_text": "Character model: 'Attractor Mechanic' by VideoIntoBlenderModel Contributors, dedicated to the public domain under CC0 1.0 Universal.",
+        "rig_metadata": {
+          "format": "FBX Binary (Kaydara 7.4.0)",
+          "embedded_texture": true,
+          "companion_texture": true,
+          "texture_resolution": "4096x4096",
+          "texture_mime": "image/png",
+          "bone_count": 61,
+          "vertex_count": 28607,
+          "polygon_count": 63995,
+          "shape_key_count": 52
+        },
+        "verification_statement": "Verified compliant: binary FBX character rig with embedded and companion 4K diffuse PNG texture, 52 ARKit facial blendshapes, passing v2bm.checks.check_rig validation with zero errors."
       }
     ],
     "images": [

@@ -240,6 +240,7 @@ class RetargetedAnimation:
     sign_events: list[dict] = field(default_factory=list)
     morph_weights: np.ndarray | None = None  # (N, M) float32 in [0.0, 1.0]
     airborne_lift_m: np.ndarray | None = None  # (N,) float64 >= 0.0
+    framing: str = "full_body"
 
     @property
     def n(self) -> int:
@@ -521,6 +522,7 @@ def build_animation(
         rig_skel_pos=[],
         rig_pos=[],
         human_pos=[],
+        framing=str(getattr(motion, "framing", "full_body") or "full_body"),
     )
     r_prev = q_prev = None
     raw_r_skeleton: list[dict[str, np.ndarray]] = []

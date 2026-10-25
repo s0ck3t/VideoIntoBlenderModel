@@ -486,6 +486,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="execution device for isolation, mask dilation, and NVENC video encoding (default: cpu)",
     )
 
+    p_prep = sub.add_parser(
+        "prepare-rig",
+        help="convert a third-party humanoid FBX into a canonical 61-bone + 52-ARKit-blendshape rig via headless Blender",
+    )
+    p_prep.add_argument("--input", required=True, help="source humanoid FBX path")
+    p_prep.add_argument("--output", required=True, help="output canonical FBX path (e.g. assets/rigs/renderpeople_nathan.fbx)")
+    p_prep.add_argument(
+        "--texture",
+        default=None,
+        help="optional diffuse texture path (auto-discovered from tex/ or textures/ when omitted)",
+    )
+    p_prep.add_argument(
+        "--blender",
+        default=None,
+        help="optional path to Blender executable",
+    )
+
     return parser
 
 
@@ -502,6 +519,16 @@ def main() -> None:
             Path(args.output),
             target=args.target_subject,
             device=args.device,
+        )
+        sys.exit(0)
+    elif args.command == "prepare-rig":
+        from .rig.prepare import prepare_rig
+
+        prepare_rig(
+            Path(args.input),
+            Path(args.output),
+            texture=Path(args.texture) if args.texture else None,
+            blender_exe=args.blender,
         )
         sys.exit(0)
     sys.exit(run(args))

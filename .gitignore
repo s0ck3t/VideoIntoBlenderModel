@@ -7,10 +7,20 @@ secrets.yaml
 *.key
 *credentials*.json
 
-# ── Scratch / intermediate / local-only rig files ────────────
+# ── Scratch / intermediate / local-only rig & video files ─────
 assets/rigs/*.log
 assets/rigs/*.blend
+assets/rigs/*.glb
 assets/rigs/erika_archer.fbx
+assets/rigs/*_raw.fbx
+assets/rigs/*_test.fbx
+assets/rigs/*_clean.fbx
+assets/rigs/*_clean.png
+assets/rigs/attractor_mechanic.fbx
+assets/rigs/attractor_mechanic.png
+assets/rigs/*.fbm/
+assets/video/gemini_generated_video_*.mp4
+assets/video/mechanic_dance_fullview.mp4
 
 # ── Auto-downloaded inference weights ────────────────────────
 weights/**
@@ -40,3 +50,6 @@ Thumbs.db
 scratch/
 GEMINI.md
 PROJECT.md
+
+# AntiCrow local data
+.anticrow/

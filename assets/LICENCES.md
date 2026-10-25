@@ -15,9 +15,13 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 | `video_kung_fu_haikou` | Video | Kung Fu Form Demonstration | Anna Frodesiak | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Kung_fu_at_Haikou_People%27s_Park.ogv) | `assets/video/kung_fu_haikou.mp4` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `video_urban_dancer` | Video | Urban Dancer Hip-Hop Freestyle Demonstration | Cottonbro Studio / Pexels Contributor | [Pexels](https://www.pexels.com/video/51314/) | `assets/video/urban_dancer_51314.mp4` | [Pexels](https://www.pexels.com/license/) | Permitted | Optional |
 | `video_street_dancer` | Video | Street Dancer Breakdance & Freestyle Demonstration | Cottonbro Studio / Pexels Contributor | [Pexels](https://www.pexels.com/video/51310/) | `assets/video/street_dancer_51310.mp4` | [Pexels](https://www.pexels.com/license/) | Permitted | Optional |
+| `video_expressive_face` | Video | Expressive Face Portrait Close-up Demonstration | Project Contributors | Photographic video capture | `assets/video/expressive_face.mp4` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
+| `video_attractor_walk_crouch` | Video | Attractor Walk & Crouch Locomotion Demonstration | Project Contributors | Video demonstration capture | `assets/video/attractor_walk_crouch_source.mp4` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
+| `rig_attractor_mechanic` | Rig | Attractor Mechanic — Stylised Game Female Character | Project Contributors | Project 3D Assets | `assets/rigs/attractor_mechanic_tpose.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `rig_kenney_skater` | Rig | Animated Characters Protagonists — Skater Male | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-protagonists) | `assets/rigs/kenney_skater.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
 | `rig_kenney_female` | Rig | Animated Characters Retro — Human Female | Kenney (Kenney Vleugels) | [Kenney.nl](https://kenney.nl/assets/animated-characters-retro) | `assets/rigs/kenney_female.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional (Credited) |
 | `rig_renderpeople_sophia` | Rig | Renderpeople Free 3D People — Sophia (`rp_sophia_animated_003_idling`) | Renderpeople GmbH | [Renderpeople.com](https://renderpeople.com/free-3d-people/) | `assets/rigs/renderpeople_sophia.fbx` | [Renderpeople-Free](https://renderpeople.com/general-terms-and-conditions/) | Permitted | Optional |
+| `rig_renderpeople_nathan` | Rig | Renderpeople Free 3D People — Nathan (`rp_nathan_animated_003_walking`) | Renderpeople GmbH | [Renderpeople.com](https://renderpeople.com/free-3d-people/) | `assets/rigs/renderpeople_nathan.fbx` | [Renderpeople-Free](https://renderpeople.com/general-terms-and-conditions/) | Permitted | Optional |
 | `procedural_articulated_humanoid_rig` | Rig | Procedural CC0 61-Bone Articulated Humanoid Rig Asset | Project Maintainers | Procedural Blender script | `assets/rigs/humanoid_articulated.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `rig_humanoid_rig` | Rig | Procedural Expressive CC0 Humanoid Character Rig | Project Maintainers | Procedural Blender generator | `assets/rigs/humanoid_rig.fbx` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
 | `image_urban_dancer_pose` | Image | Urban Dancer Full-Body Pose | Project Contributors | Photographic capture | `assets/image/urban_dancer_pose.png` | [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Permitted | Optional |
@@ -71,6 +75,20 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 - **Local File Path**: `assets/video/street_dancer_51310.mp4`
 - **Licence**: Pexels Royalty-Free Commercial Licence (`Pexels`)
 
+### 2.6. Expressive Face Portrait Close-up Demonstration (`assets/video/expressive_face.mp4`)
+
+- **Asset Title**: Expressive Face Portrait Close-up Demonstration
+- **Creator / Author**: VideoIntoBlenderModel Contributors
+- **Local File Path**: `assets/video/expressive_face.mp4`
+- **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
+
+### 2.7. Attractor Walk & Crouch Locomotion Demonstration (`assets/video/attractor_walk_crouch_source.mp4`)
+
+- **Asset Title**: Attractor Walk & Crouch Locomotion Demonstration
+- **Creator / Author**: VideoIntoBlenderModel Contributors
+- **Local File Path**: `assets/video/attractor_walk_crouch_source.mp4`
+- **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
+
 ---
 
 ## 3. Clothed & Textured Open-Licence Character Rigs
@@ -94,17 +112,31 @@ All assets in this repository are strictly **commercial-permissive**, non-copyle
 - **Licence**: Renderpeople Official Free 3D People Licence (Permitted for commercial and non-commercial projects)
 - **Specification**: Photogrammetry-scanned clothed female character rigged with 61 canonical `rig:*` bones (25 core + 30 phalangeal finger bones + 6 limb twist bones) and 52 canonical ARKit facial blendshapes (`Basis` + 52 shape keys).
 
-### 3.4. Procedural CC0 61-Bone Articulated Humanoid Character Rig (`assets/rigs/humanoid_articulated.fbx`)
+### 3.4. Renderpeople Free 3D People — Nathan (`assets/rigs/renderpeople_nathan.fbx`)
+
+- **Creator / Author**: Renderpeople GmbH ([renderpeople.com](https://renderpeople.com/free-3d-people/))
+- **Local File Path**: `assets/rigs/renderpeople_nathan.fbx` (companion texture: `assets/rigs/renderpeople_nathan.png`)
+- **Licence**: Renderpeople Official Free 3D People Licence (Permitted for commercial and non-commercial projects)
+- **Specification**: Photogrammetry-scanned clothed male character rigged with 61 canonical `rig:*` bones (25 core + 30 phalangeal finger bones + 6 limb twist bones) and 52 canonical ARKit facial blendshapes (`Basis` + 52 shape keys).
+
+### 3.5. Procedural CC0 61-Bone Articulated Humanoid Character Rig (`assets/rigs/humanoid_articulated.fbx`)
 
 - **Creator / Author**: VideoIntoBlenderModel Maintainers
 - **Local File Path**: `assets/rigs/humanoid_articulated.fbx`
 - **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
 
-### 3.5. Procedural Expressive CC0 Humanoid Character Rig (`assets/rigs/humanoid_rig.fbx`)
+### 3.6. Procedural Expressive CC0 Humanoid Character Rig (`assets/rigs/humanoid_rig.fbx`)
 
 - **Creator / Author**: VideoIntoBlenderModel Maintainers
 - **Local File Path**: `assets/rigs/humanoid_rig.fbx`
 - **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
+
+### 3.7. Attractor Mechanic Stylised Game Character Rig (`assets/rigs/attractor_mechanic_tpose.fbx`)
+
+- **Creator / Author**: VideoIntoBlenderModel Contributors
+- **Local File Path**: `assets/rigs/attractor_mechanic_tpose.fbx` (companion texture: `assets/rigs/attractor_mechanic_tpose.png`)
+- **Licence**: Creative Commons Zero v1.0 Universal (`CC0-1.0`)
+- **Specification**: Stylised game-ready female character rigged with 61 canonical `rig:*` bones (25 core + 30 phalangeal finger bones + 6 limb twist helper bones) and 52 canonical ARKit facial blendshapes (`Basis` + 52 shape keys), with 4K `4096×4096` diffuse PBR texture atlas and watertight single-component manifold mesh topology.
 
 ---
 

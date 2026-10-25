@@ -921,3 +921,45 @@ def rest_skin_error(asset: HumanoidRigAsset) -> float:
         err = max(err, float(np.linalg.norm(posed - mesh.vertices, axis=1).max()))
     return err
 
+
+def ensure_facial_morph_targets(asset: HumanoidRigAsset) -> list[str] | None:
+    """Ensure `asset` has 52 canonical ARKit morph targets, synthesising them at runtime if absent.
+
+    If any mesh in `asset.meshes` already contains embedded morph targets, its
+    `morph_target_names` are returned untouched. Otherwise, 52 ARKit displacement
+    fields are synthesised on the primary head-bound mesh from its anatomical head
+    geometry relative to `rig:Head`.
+    """
+    existing = next(
+        (m.morph_target_names for m in asset.meshes if getattr(m, "morph_target_names", None)),
+        None,
+    )
+    if existing is not None:
+        return existing
+    if not asset.meshes:
+        return None
+
+    from .prepare import CANONICAL_ARKIT_BLENDSHAPES, compute_arkit_morph_deltas
+
+    head_idx = asset.bone_index.get("rig:Head")
+    if head_idx is not None:
+        target_mesh = max(
+            asset.meshes,
+            key=lambda m: float(m.weights[:, head_idx].sum()) if m.weights.shape[1] > head_idx else 0.0,
+        )
+    else:
+        target_mesh = max(asset.meshes, key=lambda m: len(m.vertices))
+
+    head_pos = (
+        asset.rig.bones["rig:Head"].rest_world[:3, 3]
+        if "rig:Head" in asset.rig.bones
+        else None
+    )
+    deltas_map, _ = compute_arkit_morph_deltas(target_mesh.vertices, head_pos=head_pos)
+    target_mesh.morph_target_names = list(CANONICAL_ARKIT_BLENDSHAPES)
+    target_mesh.morph_deltas_pos = np.stack(
+        [deltas_map[name] for name in CANONICAL_ARKIT_BLENDSHAPES], axis=0
+    )
+    return target_mesh.morph_target_names
+
+

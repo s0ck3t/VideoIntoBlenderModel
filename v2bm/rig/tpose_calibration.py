@@ -127,14 +127,20 @@ def canonical_humanoid_tpose(rig: HumanoidRig) -> dict[str, np.ndarray]:
     pos: dict[str, np.ndarray] = {"rig:Hips": np.zeros(3)}
 
     def place(child: str, parent: str, direction: np.ndarray) -> None:
+        if child not in rig.bones or parent not in pos:
+            return
         length = rest_length(rest, parent, child)
         pos[child] = pos[parent] + normalize(direction) * length
 
     for child in SPINE_CHAIN:
+        if child not in rig.bones:
+            continue
         parent = rig.bones[child].parent
         place(child, parent, UP_DIR)
 
     def lateral_then_chain(first: str, chain: tuple[str, ...], side_sign: float, along: np.ndarray) -> None:
+        if first not in rig.bones:
+            return
         parent = rig.bones[first].parent
         offset = rest[first] - rest[parent]
         lateral = np.array([side_sign * abs(float(offset[0])), float(offset[1]), 0.0])
@@ -142,27 +148,35 @@ def canonical_humanoid_tpose(rig: HumanoidRig) -> dict[str, np.ndarray]:
             lateral = np.array([side_sign, 0.0, 0.0])
         place(first, parent, lateral)
         for child in chain[1:]:
+            if child not in rig.bones:
+                continue
             p = rig.bones[child].parent
             place(child, p, along)
 
     lateral_then_chain("rig:LeftShoulder", LEFT_ARM_CHAIN, +1.0, LEFT_DIR)
     for child in LEFT_ARM_CHAIN[1:]:
-        place(child, rig.bones[child].parent, LEFT_DIR)
+        if child in rig.bones:
+            place(child, rig.bones[child].parent, LEFT_DIR)
     lateral_then_chain("rig:RightShoulder", RIGHT_ARM_CHAIN, -1.0, RIGHT_DIR)
     for child in RIGHT_ARM_CHAIN[1:]:
-        place(child, rig.bones[child].parent, RIGHT_DIR)
+        if child in rig.bones:
+            place(child, rig.bones[child].parent, RIGHT_DIR)
 
     lateral_then_chain("rig:LeftUpLeg", LEFT_LEG_CHAIN, +1.0, DOWN_DIR)
     for child in LEFT_LEG_CHAIN[1:]:
-        place(child, rig.bones[child].parent, DOWN_DIR)
+        if child in rig.bones:
+            place(child, rig.bones[child].parent, DOWN_DIR)
     lateral_then_chain("rig:RightUpLeg", RIGHT_LEG_CHAIN, -1.0, DOWN_DIR)
     for child in RIGHT_LEG_CHAIN[1:]:
-        place(child, rig.bones[child].parent, DOWN_DIR)
+        if child in rig.bones:
+            place(child, rig.bones[child].parent, DOWN_DIR)
 
     for child in LEFT_TOE_CHAIN:
-        place(child, rig.bones[child].parent, FWD_DIR)
+        if child in rig.bones:
+            place(child, rig.bones[child].parent, FWD_DIR)
     for child in RIGHT_TOE_CHAIN:
-        place(child, rig.bones[child].parent, FWD_DIR)
+        if child in rig.bones:
+            place(child, rig.bones[child].parent, FWD_DIR)
 
     return pos
 

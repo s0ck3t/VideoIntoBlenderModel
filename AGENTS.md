@@ -17,11 +17,11 @@ All bundled rigs, weights, and example assets are 100% permissive and free for c
 
 | What | Where to put it | Source |
 | --- | --- | --- |
-| Humanoid character | `assets/rigs/humanoid_rig.fbx` (or `kenney_skater.fbx`, `kenney_female.fbx`) | Bundled CC0 rigs, or any custom FBX Binary in T-pose |
-| Input video | `assets/video/<name>.mp4` | Single clearly visible person (or multi-person with `--target-subject`) |
-| Input still | `assets/image/<name>.png` | Single clearly visible person, head to toe (optional; `--image`) |
+| Humanoid character | `assets/rigs/humanoid_rig.fbx` (or `renderpeople_nathan.fbx`, `renderpeople_sophia.fbx`, `humanoid_articulated.fbx`, `kenney_skater.fbx`, `kenney_female.fbx`) | Bundled CC0 rigs, or any custom FBX Binary (convert non-T-pose rigs via `v2bm prepare-rig`) |
+| Input video | `assets/video/<name>.mp4` | Single clearly visible person, full-body or portrait close-up (or multi-person with `--target-subject`) |
+| Input still | `assets/image/<name>.png` | Single clearly visible person, full-body or portrait (optional; `--image`) |
 
-Inference weights (`weights/mediapipe/pose_landmarker_full.task`, ~9 MB, Apache-2.0) are verified or auto-downloaded on the first run.
+Inference weights (`pose_landmarker_full.task`, `face_landmarker.task`, `hand_landmarker.task` under `weights/mediapipe/`, ~20 MB total, Apache-2.0) are verified or auto-downloaded on the first run.
 
 ## Commands
 
@@ -29,11 +29,13 @@ Inference weights (`weights/mediapipe/pose_landmarker_full.task`, ~9 MB, Apache-
 v2bm doctor        # verify assets + dependencies; prints what is missing and where to get it
 v2bm run           # latest video in assets/video/ + assets/rigs/humanoid_rig.fbx
 v2bm run --video assets/video/kung_fu_haikou.mp4 --rig assets/rigs/humanoid_rig.fbx --device cuda
+v2bm run --video assets/video/expressive_face.mp4 --rig assets/rigs/renderpeople_nathan.fbx --device cuda
 v2bm run --video assets/video/breakdancer_kickup.mp4 --rig assets/rigs/kenney_skater.fbx --device cuda
 v2bm run --image assets/image/urban_dancer_pose.png --rig assets/rigs/humanoid_rig.fbx --device cuda
 v2bm run --skeleton outputs/<run>/skeleton_motion.npz --rig ...   # reuse extraction, swap rig
 v2bm run --video MULTI.mp4 --target-subject left --rig ...        # isolate performer in multi-person video
 v2bm isolate --video MULTI.mp4 --output ISOLATED.mp4 --target-subject left --device cuda
+v2bm prepare-rig --input RAW.fbx --output assets/rigs/CUSTOM.fbx --texture DIFFUSE.jpg
 v2bm run --output-dir DIR --progress-jsonl FILE --no-preview      # Blender Extension / automation
 ```
 
@@ -78,10 +80,11 @@ Smoke-test checklist: [`docs/blender-extension.md`](docs/blender-extension.md).
 
 Each run writes `outputs/<YYYYMMDD_HHMMSS>_<source>/`:
 
-- `run.json` — inputs, timings, output listing
-- `skeleton_motion.npz` — 3D human skeleton (24 Body24 joints, Y-up metres)
-- `rig_rotations.npz` — per-bone animation rotations (quaternion wxyz; convention string inside)
-- `character_animation.glb` — skinned character + clip (glTF 2.0; Blender: File → Import → glTF 2.0)
+- `run.json` — inputs, timings, framing mode, output listing
+- `skeleton_motion.npz` — 3D human skeleton (24 Body24 joints, 21×2 hand landmarks, `upper_body_only` flag, Y-up metres)
+- `face_motion.npz` — 52 ARKit facial blendshapes, 478 3D face landmarks, head quaternion (`wxyz`), eye gaze
+- `rig_rotations.npz` — per-bone animation rotations across up to 61 bones (quaternion wxyz; convention string inside)
+- `character_animation.glb` — skinned character + skeletal & 52-ARKit morph target clip (glTF 2.0; Blender: File → Import → glTF 2.0)
 - Video in: `videos/human_skeleton.mp4`, `videos/humanoid_skeleton.mp4`, `videos/humanoid_character.mp4`, `videos/compare.mp4` (2x2: original / humanoid skeleton / human skeleton / character)
 - Photo in: the same four views as PNG under `images/`, plus `images/before_after_360_compare.mp4` (left original / right 10° orbit of the rig)
 
@@ -89,10 +92,11 @@ Each run writes `outputs/<YYYYMMDD_HHMMSS>_<source>/`:
 
 - `v2bm/paths.py` — all filesystem locations
 - `v2bm/cuda_accel.py` — optional NVIDIA CUDA GPU acceleration across all 5 pipeline stages (CuPy + FFmpeg NVENC/NVDEC)
-- `v2bm/extract.py` — video or still -> 3D human skeleton (MediaPipe Pose + IK optimiser)
-- `v2bm/rig/` — FBX parsing, FK, retargeting, skinning, rendering
+- `v2bm/extract.py` — video or still -> 3D human skeleton + hands + portrait detection (MediaPipe Pose/Hand + IK optimiser)
+- `v2bm/face_extract.py` — 52-ARKit facial blendshapes, 478 3D face landmarks, 1€ filtering & anatomical co-activation clamping
+- `v2bm/rig/` — FBX parsing, 61-bone FK, swing-twist + Foot IK + 30-bone hand retargeting, skinning, morph target synthesis, `prepare.py` rig converter, rendering
 - `v2bm/pipeline.py` — one run end to end
-- `v2bm/cli.py` — `v2bm doctor` / `v2bm run` / `v2bm isolate`
+- `v2bm/cli.py` — `v2bm doctor` / `v2bm run` / `v2bm isolate` / `v2bm prepare-rig`
 - `blender_extension/v2bm_blender/` — Blender 4.2+ Extension (UI + external process)
 - `blender_extension/README.md` — install and use the add-on
 - `docs/blender-extension.md` — maintainer smoke-test checklist

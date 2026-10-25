@@ -128,7 +128,7 @@ HUMANOID_WITHOUT_HUMAN = (
 
 # Stage 1 prefix stripping: namespaces commonly appended by DCC tools and game engines.
 _PREFIX_STRIP_RE = re.compile(
-    r"^(?:rig\d*:|mixamorig\d*:|armature[:|_|]|bip\d+_(?:[clr]_)?|bip\d+_|j_bip_|character_)",
+    r"^(?:rig\d*:|mixamorig\d*:|armature[:|_|]|bip\d+_(?:[clr]_)?|bip\d+_|j_bip_|character_|rp_[a-z0-9]+_(?:animated_\d+_[a-z0-9]+|rigged_\d+)_)",
     re.IGNORECASE,
 )
 _RIG_PREFIX_RE = re.compile(r"^rig\d*:", re.IGNORECASE)
@@ -1673,6 +1673,28 @@ def is_humanoid_bone(name: str) -> bool:
 
 def extract_objects(nodes: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     objects: dict[int, dict[str, Any]] = {}
+    has_explicit_hips = False
+    for node in nodes:
+        if node["name"] != "Objects":
+            continue
+        for child in node["children"]:
+            if not child["props"] or len(child["props"]) <= 2:
+                continue
+            if str(child["props"][2]) == "LimbNode":
+                raw_name = str(child["props"][1]).strip()
+                token = _PREFIX_STRIP_RE.sub("", raw_name, count=1).lower()
+                if token in {
+                    "hip",
+                    "hips",
+                    "pelvis",
+                    "c_hips",
+                    "bip01_pelvis",
+                    "bip_pelvis",
+                    "j_bip_c_hips",
+                }:
+                    has_explicit_hips = True
+                    break
+
     for node in nodes:
         if node["name"] != "Objects":
             continue
@@ -1680,8 +1702,16 @@ def extract_objects(nodes: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
             if not child["props"]:
                 continue
             uid = int(child["props"][0])
-            name = normalize_rig_prefix(str(child["props"][1])) if len(child["props"]) > 1 else ""
+            raw_name = str(child["props"][1]) if len(child["props"]) > 1 else ""
             class_name = str(child["props"][2]) if len(child["props"]) > 2 else ""
+            if has_explicit_hips and class_name == "LimbNode":
+                token = _PREFIX_STRIP_RE.sub("", raw_name.strip(), count=1).lower()
+                if token == "root":
+                    name = "Root"
+                else:
+                    name = normalize_rig_prefix(raw_name)
+            else:
+                name = normalize_rig_prefix(raw_name) if len(child["props"]) > 1 else ""
             objects[uid] = {
                 "uid": uid,
                 "node_name": child["name"],

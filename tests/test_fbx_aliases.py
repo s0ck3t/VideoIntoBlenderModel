@@ -570,3 +570,35 @@ def test_backward_compatibility_with_25_bone_rigs() -> None:
     for twist in TWIST_BONE_SUFFIXES:
         assert f"rig:{twist}" not in mapping.controlled
 
+
+
+def test_prepare_rig_bone_rename_map_mixamo_coverage() -> None:
+    """Verify BONE_RENAME_MAP in v2bm.rig.prepare maps all 52 Mixamo body and finger bones."""
+    from v2bm.rig.prepare import BONE_RENAME_MAP, WEIGHT_FOLD_MAP
+
+    mixamo_fingers = [
+        "LeftHandThumb1", "LeftHandThumb2", "LeftHandThumb3",
+        "LeftHandIndex1", "LeftHandIndex2", "LeftHandIndex3",
+        "LeftHandMiddle1", "LeftHandMiddle2", "LeftHandMiddle3",
+        "LeftHandRing1", "LeftHandRing2", "LeftHandRing3",
+        "LeftHandPinky1", "LeftHandPinky2", "LeftHandPinky3",
+        "RightHandThumb1", "RightHandThumb2", "RightHandThumb3",
+        "RightHandIndex1", "RightHandIndex2", "RightHandIndex3",
+        "RightHandMiddle1", "RightHandMiddle2", "RightHandMiddle3",
+        "RightHandRing1", "RightHandRing2", "RightHandRing3",
+        "RightHandPinky1", "RightHandPinky2", "RightHandPinky3",
+    ]
+
+    for finger in mixamo_fingers:
+        low = finger.lower()
+        assert low in BONE_RENAME_MAP, f"Mixamo finger {finger} missing from BONE_RENAME_MAP"
+        assert BONE_RENAME_MAP[low] == f"rig:{finger}"
+
+    # Verify fingertip end bones are folded
+    mixamo_tips = [
+        "lefthandthumb4", "lefthandindex4", "lefthandmiddle4", "lefthandring4", "lefthandpinky4",
+        "righthandthumb4", "righthandindex4", "righthandmiddle4", "righthandring4", "righthandpinky4",
+    ]
+    for tip in mixamo_tips:
+        assert tip in WEIGHT_FOLD_MAP, f"Mixamo leaf tip {tip} missing from WEIGHT_FOLD_MAP"
+        assert WEIGHT_FOLD_MAP[tip].startswith("rig:")
